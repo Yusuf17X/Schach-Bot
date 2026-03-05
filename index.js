@@ -54,12 +54,15 @@ bot.use(async (ctx, next) => {
 
   let user = await User.findOne({ chatId: ctx.from.id });
 
+  const telegramId = ctx.from.id.toString();
+  const ownerId = process.env.ADMIN_ID;
+
   if (!user) {
     user = await User.create({
       chatId: ctx.from.id,
       name: ctx.from.first_name,
       username: ctx.from.username,
-      role: "user",
+      role: telegramId === ownerId ? "owner" : "user",
     });
 
     const owners = await User.find({ role: "owner" });
