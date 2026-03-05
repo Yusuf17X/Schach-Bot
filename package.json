@@ -1,0 +1,25 @@
+{
+  "dependencies": {
+    "dotenv": "^17.3.1",
+    "mongoose": "^9.2.1",
+    "telegraf": "^4.16.3"
+  },
+  "name": "bit-schach-bot",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "nodemon index.js"
+  },
+  "author": "Yousif",
+  "license": "ISC",
+  "devDependencies": {
+    "cross-env": "^10.1.0",
+    "eslint": "^9.39.2",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-node": "^11.1.0",
+    "eslint-plugin-prettier": "^5.5.4",
+    "nodemon": "^3.1.11",
+    "prettier": "^3.7.4"
+  },
+  "description": ""
+}
