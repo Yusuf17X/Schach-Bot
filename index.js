@@ -1,4 +1,4 @@
-require("dotenv").config({ path: "./config.env" });
+require("dotenv").config();
 const { Telegraf, Scenes, session } = require("telegraf");
 const mongoose = require("mongoose");
 const { User, BotSettings, Stage } = require("./models");
