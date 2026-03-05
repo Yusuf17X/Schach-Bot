@@ -495,10 +495,7 @@ const broadcastWizard = new Scenes.WizardScene(
 
     for (const user of users) {
       try {
-        await ctx.telegram.sendMessage(
-          user.chatId,
-          `📢 **Admin Announcement**\n\n${ctx.message.text}`,
-        );
+        await ctx.telegram.sendMessage(user.chatId, `${ctx.message.text}`);
         sent++;
       } catch (err) {
         // User blocked bot
@@ -937,7 +934,7 @@ const broadcastGroupWizard = new Scenes.WizardScene(
     try {
       await ctx.telegram.sendMessage(
         ctx.wizard.state.targetGroupId,
-        `📢 **Admin Announcement**\n\n${announcementText}`,
+        `${announcementText}`,
       );
       ctx.reply("✅ Announcement sent successfully!", adminPanelKeyboard(ctx));
     } catch (error) {
@@ -1002,7 +999,7 @@ const editHomeworkWizard = new Scenes.WizardScene(
     const stages = await Stage.find();
     await ctx.reply(
       "🎓 Select the Stage to update homework for:",
-      Markup.keyboard([...stages.map((s) => [s.name]), ["🔙 Cancel"]]).resize(),
+      Markup.keyboard([...stages.map((s) => [s.name]), ["❌ Cancel"]]).resize(),
     );
     return ctx.wizard.next();
   },
@@ -1060,7 +1057,7 @@ const editScheduleWizard = new Scenes.WizardScene(
     const stages = await Stage.find();
     await ctx.reply(
       "🎓 Select the Stage to update the schedule for:",
-      Markup.keyboard([...stages.map((s) => [s.name]), ["🔙 Cancel"]]).resize(),
+      Markup.keyboard([...stages.map((s) => [s.name]), ["❌ Cancel"]]).resize(),
     );
     return ctx.wizard.next();
   },
