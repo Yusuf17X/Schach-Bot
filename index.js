@@ -276,8 +276,6 @@ bot.catch(async (err, ctx) => {
 
     // Send the error message
     await ctx.reply(
-      "⚠️ Oops! Something went wrong on my end while processing your request.\n\n" +
-        "I've canceled your current action to be safe. Please try again, or type /start to refresh the menu.",
       "صار غلط بالبوت.. جرب مره ثانية او اكتب /start .\n\nاذا استمرت المشكلة راسل مطور البوت 😇.",
     );
   } catch (replyError) {
