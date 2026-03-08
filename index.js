@@ -49,7 +49,7 @@ bot.use(session());
 
 // Global User Middleware
 bot.use(async (ctx, next) => {
-  console.log(ctx.from.id);
+  console.log(ctx.chat.id);
 
   // saving users who interact directly with the bot
   if (!ctx.from) return next();
