@@ -9,7 +9,13 @@ const {
   Creative,
   CreativeFile,
 } = require("./models");
-const { timeIt, isCancel, mainMenuKeyboard } = require("./utils");
+
+const {
+  timeIt,
+  isCancel,
+  mainMenuKeyboard,
+  showClassesMenu,
+} = require("./utils");
 
 const chooseStageWizard = new Scenes.WizardScene(
   "CHOOSE_STAGE_SCENE",
@@ -46,50 +52,55 @@ const chooseStageWizard = new Scenes.WizardScene(
 
 const browseClassesWizard = new Scenes.WizardScene(
   "BROWSE_CLASSES_SCENE",
-
-  // STEP 1: Show Classes + Optional Homework/Schedule Buttons
+  // STEP 0: Check if user has a stage
   async (ctx) => {
-    const user = await User.findOne({ chatId: ctx.chat.id.toString() });
-    if (!user || !user.stageId) {
-      await ctx.reply("⚠️ اختر مرحلتك اولاً.", mainMenuKeyboard(ctx));
-      return ctx.scene.leave();
-    }
+    // We use the dbUser we saved in your global middleware earlier!
+    const user = ctx.state.dbUser;
 
-    // Fetch the Stage to check for Homework/Schedule
-    const stage = await Stage.findById(user.stageId);
+    if (!user.stageId) {
+      // USER HAS NO STAGE: Fetch stages and show them buttons
+      const stages = await Stage.find({});
+      if (stages.length === 0) {
+        await ctx.reply("⚠️ خطأ بتحميل المراحل.", mainMenuKeyboard(ctx));
+        return ctx.scene.leave();
+      }
 
-    if (!stage) {
+      const stageButtons = stages.map((s) => [s.name]);
+      stageButtons.push(["🔝 القائمة الرئيسية"]);
+
       await ctx.reply(
-        "⚠️ الصف الذي اخترته غير موجود, اختر صف اخر..",
-        mainMenuKeyboard(ctx),
+        "اختار مرحلتك 😄\nتكدر تغيرها بعدين..",
+        Markup.keyboard(stageButtons).resize(),
       );
+
+      // Move to Step 1 to wait for their stage choice
+      return ctx.wizard.next();
+    }
+
+    // USER ALREADY HAS STAGE: Show classes instantly and skip Step 1
+    return await showClassesMenu(ctx, user.stageId);
+  },
+  // STEP 1: Handle Stage Selection (Only runs if they didn't have a stage)
+  async (ctx) => {
+    const text = ctx.message?.text;
+    if (isCancel(text)) {
+      await ctx.reply("🔝 القائمة الرئيسية", mainMenuKeyboard(ctx));
       return ctx.scene.leave();
     }
 
-    ctx.wizard.state.stage = stage; // Save for the next step
+    const selectedStage = await Stage.findOne({ name: text });
+    if (!selectedStage) return ctx.reply("⚠️ اختار مرحلة من الازرار الموجودة.");
 
-    const classes = await timeIt(
-      "DB: Fetch Classes (User)",
-      Class.find({ stageId: user.stageId }),
-    );
+    // Save their choice permanently in the database
+    const user = ctx.state.dbUser;
+    user.stageId = selectedStage._id;
+    await user.save();
 
-    const buttons = classes.map((c) => [c.name]);
+    await ctx.reply(`✅ تم حفظ مرحلتك (${selectedStage.name})!`);
 
-    // --- Inject Homework/Schedule if they exist ---
-    const updatesRow = [];
-    if (stage.homeworkText) updatesRow.push("📝 الواجبات");
-    if (stage.scheduleImageId) updatesRow.push("📅 الجدول");
-
-    if (updatesRow.length > 0) {
-      buttons.unshift(updatesRow); // Put them at the very top
-    }
-
-    buttons.push(["🔝 القائمة الرئيسية"]);
-
-    ctx.reply("📚 اختر مادة:", Markup.keyboard(buttons).resize());
-    return ctx.wizard.next();
+    // Now immediately show them their classes and jump to Step 2
+    return await showClassesMenu(ctx, selectedStage._id);
   },
-
   // STEP 2: Handle Class Click OR Homework/Schedule Clicks
   async (ctx) => {
     const text = ctx.message?.text;
@@ -115,7 +126,7 @@ const browseClassesWizard = new Scenes.WizardScene(
       name: text,
       stageId: stage._id,
     });
-    if (!selectedClass) return ctx.reply("⚠️ اختر كلمة صحيحة من الازرار.");
+    if (!selectedClass) return ctx.reply("⚠️ اختار كلمة صحيحة من الازرار.");
 
     ctx.wizard.state.classId = selectedClass._id;
 
@@ -124,17 +135,14 @@ const browseClassesWizard = new Scenes.WizardScene(
       Lecture.find({ classId: selectedClass._id }),
     );
 
-    // Split lectures by category
     const theoryLectures = lectures.filter((l) => l.category !== "lab");
     const labLectures = lectures.filter((l) => l.category === "lab");
 
-    // Save them to state so Step 3 can use them to build the folders
     ctx.wizard.state.theoryLectures = theoryLectures;
     ctx.wizard.state.labLectures = labLectures;
 
     const lectureButtons = theoryLectures.map((l) => [l.title]);
 
-    // Add the Lab Folder button if labs exist
     if (labLectures.length > 0) {
       lectureButtons.unshift(["🔬 Lab Lectures"]);
     }
@@ -147,7 +155,6 @@ const browseClassesWizard = new Scenes.WizardScene(
     );
     return ctx.wizard.next();
   },
-
   // STEP 3: Handle Lecture Download OR Lab Folder Navigation
   async (ctx) => {
     const text = ctx.message?.text;
@@ -156,23 +163,25 @@ const browseClassesWizard = new Scenes.WizardScene(
       return ctx.scene.leave();
     }
 
-    if (text === "🔙 العودة الى المواد")
+    if (text === "🔙 العودة الى المواد") {
       return ctx.scene.enter("BROWSE_CLASSES_SCENE");
+    }
 
-    // --- Intercept "Back to Lectures" (Navigating out of the Lab folder) ---
+    // --- Intercept "Back to Lectures" ---
     if (text === "🔙 العودة الى المحاضرات") {
       const theoryButtons = ctx.wizard.state.theoryLectures.map((l) => [
         l.title,
       ]);
-      if (ctx.wizard.state.labLectures.length > 0)
+      if (ctx.wizard.state.labLectures.length > 0) {
         theoryButtons.unshift(["🔬 Lab Lectures"]);
+      }
       theoryButtons.push(["🔙 العودة الى المواد", "🔝 القائمة الرئيسية"]);
 
       await ctx.reply("📖 المحاضرات:", Markup.keyboard(theoryButtons).resize());
-      return; // Stay in Step 3
+      return;
     }
 
-    // --- Intercept Lab Folder Click (Navigating into the Lab folder) ---
+    // --- Intercept Lab Folder Click ---
     if (
       text === "🔬 Lab Lectures" &&
       ctx.wizard.state.labLectures?.length > 0
@@ -181,10 +190,10 @@ const browseClassesWizard = new Scenes.WizardScene(
       labButtons.push(["🔙 العودة الى المحاضرات", "🔝 القائمة الرئيسية"]);
 
       await ctx.reply(
-        "🔬 Lab Lectures:\n\nاختر محاضرة:",
+        "🔬 Lab Lectures:\n\nاختار محاضرة:",
         Markup.keyboard(labButtons).resize(),
       );
-      return; // Stay in Step 3
+      return;
     }
 
     // --- Process Lecture Download ---
@@ -193,7 +202,7 @@ const browseClassesWizard = new Scenes.WizardScene(
       title: text,
     });
 
-    if (!lecture) return ctx.reply("⚠️ اختر محاضرة من الازرار.");
+    if (!lecture) return ctx.reply("⚠️ اختار محاضرة من الازرار.");
 
     const statusMsg = await ctx.reply(`⏳ إرسال ${lecture.title}...`);
 
@@ -212,8 +221,6 @@ const browseClassesWizard = new Scenes.WizardScene(
     try {
       await ctx.telegram.deleteMessage(ctx.chat.id, statusMsg.message_id);
     } catch (e) {}
-
-    // No exit here so they can click and download multiple lectures in a row!
   },
 );
 
@@ -343,7 +350,7 @@ const suggestWizard = new Scenes.WizardScene(
 
     await ctx.telegram.sendMessage(
       adminId,
-      `💡 New suggestion from ${ctx.from.first_name || ctx.from.username || ctx.from.id} (@${ctx.from.username}):\n\n${suggestion}`,
+      `💡 New suggestion from ${ctx.from.username || ctx.from.first_name || ctx.from.id} (@${ctx.from.username}):\n\n${suggestion}`,
     );
 
     ctx.reply("✅ شكرا على اقتراحك!", mainMenuKeyboard(ctx));
