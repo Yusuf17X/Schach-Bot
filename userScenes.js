@@ -322,8 +322,7 @@ const viewCreativeWizard = new Scenes.WizardScene(
       } catch (e) {}
     }
 
-    await ctx.reply("✅ تم الانتهاء.", mainMenuKeyboard(ctx));
-    return ctx.scene.leave(); // FIX: Exit scene so user doesn't get trapped
+    return ctx.scene.leave(); // Exit scene so user doesnt get trapped
   },
 );
 
