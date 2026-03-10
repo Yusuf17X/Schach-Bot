@@ -81,7 +81,7 @@ const chooseStageWizard = new Scenes.WizardScene(
 
 const browseClassesWizard = new Scenes.WizardScene(
   "BROWSE_CLASSES_SCENE",
-  // STEP 0: Check if user has a stage
+  // STEP 1: Check if user has a stage
   async (ctx) => {
     // We use the dbUser we saved in your global middleware earlier!
     const user = ctx.state.dbUser;
@@ -92,27 +92,6 @@ const browseClassesWizard = new Scenes.WizardScene(
 
     // USER ALREADY HAS STAGE: Show classes instantly and skip Step 1
     return await showClassesMenu(ctx, user.stageId);
-  },
-  // STEP 1: Handle Stage Selection (Only runs if they didn't have a stage)
-  async (ctx) => {
-    const text = ctx.message?.text;
-    if (isCancel(text)) {
-      await ctx.reply("🔝 القائمة الرئيسية", mainMenuKeyboard(ctx));
-      return ctx.scene.leave();
-    }
-
-    const selectedStage = await Stage.findOne({ name: text });
-    if (!selectedStage) return ctx.reply("⚠️ اختار مرحلة من الازرار الموجودة.");
-
-    // Save their choice permanently in the database
-    const user = ctx.state.dbUser;
-    user.stageId = selectedStage._id;
-    await user.save();
-
-    await ctx.reply(`✅ تم حفظ مرحلتك (${selectedStage.name})!`);
-
-    // Now immediately show them their classes and jump to Step 2
-    return await showClassesMenu(ctx, selectedStage._id);
   },
   // STEP 2: Handle Class Click OR Homework/Schedule Clicks
   async (ctx) => {
