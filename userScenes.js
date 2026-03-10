@@ -78,7 +78,7 @@ const browseClassesWizard = new Scenes.WizardScene(
     }
 
     // USER ALREADY HAS STAGE: Show classes instantly and skip Step 1
-    return await showClassesMenu(ctx, user.stageId);
+    return await showClassesMenu(ctx, Stage, user.stageId);
   },
   // STEP 1: Handle Stage Selection (Only runs if they didn't have a stage)
   async (ctx) => {
@@ -99,7 +99,7 @@ const browseClassesWizard = new Scenes.WizardScene(
     await ctx.reply(`✅ تم حفظ مرحلتك (${selectedStage.name})!`);
 
     // Now immediately show them their classes and jump to Step 2
-    return await showClassesMenu(ctx, selectedStage._id);
+    return await showClassesMenu(ctx, Stage, selectedStage._id);
   },
   // STEP 2: Handle Class Click OR Homework/Schedule Clicks
   async (ctx) => {

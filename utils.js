@@ -128,7 +128,7 @@ const sendBatchNotification = async (ctx, stageId, groupId) => {
   }
 };
 
-const showClassesMenu = async (ctx, stageId) => {
+const showClassesMenu = async (ctx, Stage, stageId) => {
   const stage = await Stage.findById(stageId);
   if (!stage) {
     await ctx.reply("⚠️ المرحلة غير موجودة.", mainMenuKeyboard(ctx));
