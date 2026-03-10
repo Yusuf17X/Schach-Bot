@@ -298,10 +298,10 @@ const viewCreativeWizard = new Scenes.WizardScene(
     if (!creative) return ctx.reply("⚠️ اختر زر من الازرار الموجودة.");
 
     // Send the text message first (we keep this one permanently)
-    await ctx.reply(`🎨 ${creative.name}\n\n${creative.text}`, {
-      entities: ctx.message.entities,
-      disable_web_page_preview: true,
-    });
+    // await ctx.reply(`🎨 ${creative.name}\n\n${creative.text}`, {
+    //   entities: ctx.message.entities,
+    //   disable_web_page_preview: true,
+    // });
 
     await ctx.copyMessage(
       ctx.chat.id,
