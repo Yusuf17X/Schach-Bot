@@ -624,10 +624,10 @@ const addCreativeWizard = new Scenes.WizardScene(
       return ctx.scene.leave(ctx.reply("Cancelled.", adminPanelKeyboard(ctx)));
 
     try {
-      const channelMsg = await ctx.telegram.sendMessage(
+      const channelMsg = await ctx.telegram.copyMessage(
         process.env.CHANNEL_ID,
-        `🎨 **${ctx.wizard.state.creativeName}**\n\n${ctx.message.text}`,
-        { entities: ctx.message.entities },
+        ctx.chat.id,
+        ctx.message.message_id,
       );
       const creative = await timeIt(
         "DB: Create Creative",
