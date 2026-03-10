@@ -627,7 +627,7 @@ const addCreativeWizard = new Scenes.WizardScene(
       const channelMsg = await ctx.telegram.sendMessage(
         process.env.CHANNEL_ID,
         `🎨 **${ctx.wizard.state.creativeName}**\n\n${ctx.message.text}`,
-        { parse_mode: "MarkdownV2" },
+        { parse_mode: "html" },
       );
       const creative = await timeIt(
         "DB: Create Creative",
