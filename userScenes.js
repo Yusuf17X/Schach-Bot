@@ -51,7 +51,7 @@ const chooseStageWizard = new Scenes.WizardScene(
   async (ctx) => {
     const stages = await timeIt("DB: Fetch Stages (User)", Stage.find());
     ctx.reply(
-      "🎓 اختر مرحلتك:",
+      "اختار مرحلتك 😄\nتكدر تغيرها بعدين..",
       Markup.keyboard([
         ...stages.map((s) => [s.name]),
         ["🔝 القائمة الرئيسية"],
@@ -87,23 +87,7 @@ const browseClassesWizard = new Scenes.WizardScene(
     const user = ctx.state.dbUser;
 
     if (!user.stageId) {
-      // USER HAS NO STAGE: Fetch stages and show them buttons
-      const stages = await Stage.find({});
-      if (stages.length === 0) {
-        await ctx.reply("⚠️ خطأ بتحميل المراحل.", mainMenuKeyboard(ctx));
-        return ctx.scene.leave();
-      }
-
-      const stageButtons = stages.map((s) => [s.name]);
-      stageButtons.push(["🔝 القائمة الرئيسية"]);
-
-      await ctx.reply(
-        "اختار مرحلتك 😄\nتكدر تغيرها بعدين..",
-        Markup.keyboard(stageButtons).resize(),
-      );
-
-      // Move to Step 1 to wait for their stage choice
-      return ctx.wizard.next();
+      ctx.scene.enter("CHOOSE_STAGE_SCENE");
     }
 
     // USER ALREADY HAS STAGE: Show classes instantly and skip Step 1
