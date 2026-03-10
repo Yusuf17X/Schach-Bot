@@ -97,7 +97,6 @@ const browseClassesWizard = new Scenes.WizardScene(
     // USER ALREADY HAS STAGE: Show classes instantly
     return await showClassesMenu(ctx, user.stageId);
   },
-
   // STEP 2 (Index 1): Handle Class Click OR Homework/Schedule Clicks
   async (ctx) => {
     const text = ctx.message?.text;
@@ -152,7 +151,6 @@ const browseClassesWizard = new Scenes.WizardScene(
     );
     return ctx.wizard.next();
   },
-
   // STEP 3 (Index 2): Handle Lecture Download OR Lab Folder Navigation
   async (ctx) => {
     const text = ctx.message?.text;
@@ -300,7 +298,7 @@ const viewCreativeWizard = new Scenes.WizardScene(
 
     // Send the text message first (we keep this one permanently)
     await ctx.reply(`🎨 ${creative.name}\n\n${creative.text}`, {
-      parse_mode: "Markdown",
+      parse_mode: "MarkdownV2",
     });
 
     const files = await CreativeFile.find({ creativeId: creative._id });
