@@ -301,8 +301,8 @@ const viewCreativeWizard = new Scenes.WizardScene(
     try {
       await ctx.telegram.copyMessage(
         ctx.chat.id, // 1. Where it's going (The Student)
-        "-1003831570408", // 2. Where it is right now (Your Storage Group ID)
-        creative.storageMessageId, // 3. The ID of the message saved in your database
+        process.env.CHANNEL_ID, // 2. Where it is right now (Your Storage Group ID)
+        creative.storageMsgId, // 3. The ID of the message saved in your database
       );
     } catch (error) {
       console.error("Failed to copy message:", error);
