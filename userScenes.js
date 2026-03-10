@@ -10,12 +10,41 @@ const {
   CreativeFile,
 } = require("./models");
 
-const {
-  timeIt,
-  isCancel,
-  mainMenuKeyboard,
-  showClassesMenu,
-} = require("./utils");
+const { timeIt, isCancel, mainMenuKeyboard } = require("./utils");
+
+const showClassesMenu = async (ctx, stageId) => {
+  const stage = await Stage.findById(stageId);
+  if (!stage) {
+    await ctx.reply("⚠️ المرحلة غير موجودة.", mainMenuKeyboard(ctx));
+    return ctx.scene.leave();
+  }
+
+  // Save stage to wizard state so the next step can use it for Homework/Schedule
+  ctx.wizard.state.stage = stage;
+
+  const classes = await timeIt(
+    "DB: Fetch Classes (User)",
+    Class.find({ stageId: stageId }),
+  );
+
+  const buttons = classes.map((c) => [c.name]);
+
+  // --- Inject Homework/Schedule if they exist ---
+  const updatesRow = [];
+  if (stage.homeworkText) updatesRow.push("📝 الواجبات");
+  if (stage.scheduleImageId) updatesRow.push("📅 الجدول");
+
+  if (updatesRow.length > 0) buttons.unshift(updatesRow);
+  buttons.push(["🔝 القائمة الرئيسية"]);
+
+  await ctx.reply(
+    `📚 مواد ${stage.name} - اختر مادة:`,
+    Markup.keyboard(buttons).resize(),
+  );
+
+  // MAGIC JUMP: Skip straight to the Step that handles Class clicks!
+  return ctx.wizard.selectStep(2);
+};
 
 const chooseStageWizard = new Scenes.WizardScene(
   "CHOOSE_STAGE_SCENE",
@@ -78,7 +107,7 @@ const browseClassesWizard = new Scenes.WizardScene(
     }
 
     // USER ALREADY HAS STAGE: Show classes instantly and skip Step 1
-    return await showClassesMenu(ctx, Stage, user.stageId);
+    return await showClassesMenu(ctx, user.stageId);
   },
   // STEP 1: Handle Stage Selection (Only runs if they didn't have a stage)
   async (ctx) => {
@@ -99,7 +128,7 @@ const browseClassesWizard = new Scenes.WizardScene(
     await ctx.reply(`✅ تم حفظ مرحلتك (${selectedStage.name})!`);
 
     // Now immediately show them their classes and jump to Step 2
-    return await showClassesMenu(ctx, Stage, selectedStage._id);
+    return await showClassesMenu(ctx, selectedStage._id);
   },
   // STEP 2: Handle Class Click OR Homework/Schedule Clicks
   async (ctx) => {
