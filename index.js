@@ -128,7 +128,9 @@ bot.start(async (ctx) => {
       "#الاسم",
       ctx.state.dbUser?.name || ctx.state.dbUser?.username,
     ) || "اهلا بيك ببوت سچاچ!";
-  ctx.reply(welcomeText, mainMenuKeyboard(ctx), { parse_mode: "Markdown" });
+  ctx.reply(welcomeText, mainMenuKeyboard(ctx), {
+    entities: ctx.message.entities,
+  });
 });
 
 bot.command("link", async (ctx) => {
@@ -162,7 +164,7 @@ bot.command("link", async (ctx) => {
     return ctx.reply(
       `✅ Success! This group is now officially linked to **${stage.name}**.`,
       `تم. البوت انربط ب ${stage.name} ✅`,
-      { parse_mode: "Markdown" },
+      { entities: ctx.message.entities },
     );
   } catch (error) {
     console.error(error);

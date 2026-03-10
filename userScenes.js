@@ -298,7 +298,7 @@ const viewCreativeWizard = new Scenes.WizardScene(
 
     // Send the text message first (we keep this one permanently)
     await ctx.reply(`🎨 ${creative.name}\n\n${creative.text}`, {
-      parse_mode: "Markdown",
+      entities: ctx.message.entities,
     });
 
     const files = await CreativeFile.find({ creativeId: creative._id });
