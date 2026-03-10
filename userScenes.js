@@ -42,14 +42,20 @@ const showClassesMenu = async (ctx, stageId) => {
     Markup.keyboard(buttons).resize(),
   );
 
-  // MAGIC JUMP: Skip straight to the Step that handles Class clicks!
-  return ctx.wizard.selectStep(2);
+  return ctx.wizard.next();
 };
 
+// --- CHOOSE STAGE SCENE ---
 const chooseStageWizard = new Scenes.WizardScene(
   "CHOOSE_STAGE_SCENE",
   async (ctx) => {
     const stages = await timeIt("DB: Fetch Stages (User)", Stage.find());
+
+    if (stages.length === 0) {
+      await ctx.reply("⚠️ لا توجد مراحل حالياً.", mainMenuKeyboard(ctx));
+      return ctx.scene.leave();
+    }
+
     ctx.reply(
       "اختار مرحلتك 😄\nتكدر تغيرها بعدين..",
       Markup.keyboard([
@@ -64,36 +70,35 @@ const chooseStageWizard = new Scenes.WizardScene(
       await ctx.reply("🔝 القائمة الرئيسية", mainMenuKeyboard(ctx));
       return ctx.scene.leave();
     }
-    const stage = await Stage.findOne({ name: ctx.message.text });
-    if (!stage) return ctx.reply("⚠️ المرحلة غير موجودة.");
+    const stage = await Stage.findOne({ name: ctx.message?.text });
+    if (!stage) return ctx.reply("⚠️ المرحلة غير موجودة، اختار من الازرار.");
 
-    await timeIt(
-      "DB: Update User Stage",
-      User.updateOne(
-        { chatId: ctx.chat.id.toString() },
-        { stageId: stage._id },
-      ),
-    );
-    ctx.reply(`✅ تم اختيار مرحلة ${stage.name}.`);
+    const user = ctx.state.dbUser;
+    user.stageId = stage._id;
+    await user.save();
+
+    await ctx.reply(`✅ تم اختيار مرحلة ${stage.name}.`);
+
     return ctx.scene.enter("BROWSE_CLASSES_SCENE");
   },
 );
 
+// --- BROWSE CLASSES SCENE ---
 const browseClassesWizard = new Scenes.WizardScene(
   "BROWSE_CLASSES_SCENE",
-  // STEP 1: Check if user has a stage
+  // STEP 1 (Index 0): Check if user has a stage
   async (ctx) => {
-    // We use the dbUser we saved in your global middleware earlier!
     const user = ctx.state.dbUser;
 
     if (!user.stageId) {
-      ctx.scene.enter("CHOOSE_STAGE_SCENE");
+      return ctx.scene.enter("CHOOSE_STAGE_SCENE");
     }
 
-    // USER ALREADY HAS STAGE: Show classes instantly and skip Step 1
+    // USER ALREADY HAS STAGE: Show classes instantly
     return await showClassesMenu(ctx, user.stageId);
   },
-  // STEP 2: Handle Class Click OR Homework/Schedule Clicks
+
+  // STEP 2 (Index 1): Handle Class Click OR Homework/Schedule Clicks
   async (ctx) => {
     const text = ctx.message?.text;
     if (isCancel(text)) {
@@ -141,13 +146,14 @@ const browseClassesWizard = new Scenes.WizardScene(
 
     lectureButtons.push(["🔙 العودة الى المواد", "🔝 القائمة الرئيسية"]);
 
-    ctx.reply(
+    await ctx.reply(
       `📖 ${selectedClass.name}\n\nاختر محاضرة:`,
       Markup.keyboard(lectureButtons).resize(),
     );
     return ctx.wizard.next();
   },
-  // STEP 3: Handle Lecture Download OR Lab Folder Navigation
+
+  // STEP 3 (Index 2): Handle Lecture Download OR Lab Folder Navigation
   async (ctx) => {
     const text = ctx.message?.text;
     if (isCancel(text)) {
