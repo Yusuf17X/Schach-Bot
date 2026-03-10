@@ -647,6 +647,7 @@ const addCreativeWizard = new Scenes.WizardScene(
       );
       return ctx.wizard.next();
     } catch (e) {
+      console.error("Creative Save Error", e);
       return ctx.reply("❌ Error saving text. Try again or Cancel.");
     }
   },
