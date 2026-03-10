@@ -629,6 +629,7 @@ const addCreativeWizard = new Scenes.WizardScene(
         ctx.chat.id,
         ctx.message.message_id,
       );
+
       const creative = await timeIt(
         "DB: Create Creative",
         Creative.create({

@@ -11,6 +11,7 @@ const {
 } = require("./models");
 
 const { timeIt, isCancel, mainMenuKeyboard } = require("./utils");
+const { message } = require("telegraf/filters");
 
 const showClassesMenu = async (ctx, stageId) => {
   const stage = await Stage.findById(stageId);
@@ -301,6 +302,12 @@ const viewCreativeWizard = new Scenes.WizardScene(
       entities: ctx.message.entities,
       disable_web_page_preview: true,
     });
+
+    await ctx.copyMessage(
+      ctx.chat.id,
+      process.env.CHANNEL_ID,
+      creative.channelMsgId,
+    );
 
     const files = await CreativeFile.find({ creativeId: creative._id });
     if (files.length > 0) {
