@@ -11,7 +11,6 @@ const {
 } = require("./models");
 
 const { timeIt, isCancel, mainMenuKeyboard } = require("./utils");
-const { message } = require("telegraf/filters");
 
 const showClassesMenu = async (ctx, stageId) => {
   const stage = await Stage.findById(stageId);
@@ -297,21 +296,23 @@ const viewCreativeWizard = new Scenes.WizardScene(
     const creative = await Creative.findOne({ name: ctx.message.text });
     if (!creative) return ctx.reply("⚠️ اختر زر من الازرار الموجودة.");
 
-    // Send the text message first (we keep this one permanently)
-    // await ctx.reply(`🎨 ${creative.name}\n\n${creative.text}`, {
-    //   entities: ctx.message.entities,
-    //   disable_web_page_preview: true,
-    // });
+    // MAGIC JUMP: We use copyMessage to clone the exact formatted message from the storage group!
+    // Note: Replace STORAGE_GROUP_ID with your actual group ID, and ensure your DB saves the messageId!
+    try {
+      await ctx.telegram.copyMessage(
+        ctx.chat.id, // 1. Where it's going (The Student)
+        "-1003831570408", // 2. Where it is right now (Your Storage Group ID)
+        creative.storageMessageId, // 3. The ID of the message saved in your database
+      );
+    } catch (error) {
+      console.error("Failed to copy message:", error);
+      // Fallback just in case the message was deleted from the storage group
+      await ctx.reply(`🎨 ${creative.name}\n\n${creative.text}`);
+    }
 
-    await ctx.copyMessage(
-      ctx.chat.id,
-      process.env.CHANNEL_ID,
-      creative.channelMsgId,
-    );
-
+    // --- The rest of your file sending code stays exactly the same! ---
     const files = await CreativeFile.find({ creativeId: creative._id });
     if (files.length > 0) {
-      // 1. Capture the loading message
       const statusMsg = await ctx.reply(`⏳ إرسال الملفات المرفقة...`);
 
       for (const file of files) {
@@ -324,13 +325,12 @@ const viewCreativeWizard = new Scenes.WizardScene(
         }
       }
 
-      // 2. Delete the loading message once finished
       try {
         await ctx.telegram.deleteMessage(ctx.chat.id, statusMsg.message_id);
       } catch (e) {}
     }
 
-    return ctx.scene.leave(); // Exit scene so user doesnt get trapped
+    return ctx.scene.leave();
   },
 );
 
