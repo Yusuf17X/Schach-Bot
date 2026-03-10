@@ -296,10 +296,12 @@ const viewCreativeWizard = new Scenes.WizardScene(
     }
 
     const creative = await Creative.findOne({ name: ctx.message.text });
-    if (!creative) return ctx.reply("⚠️ اختر زر من الازرار الموجودة."); // FIX: Added reply
+    if (!creative) return ctx.reply("⚠️ اختر زر من الازرار الموجودة.");
 
     // Send the text message first (we keep this one permanently)
-    await ctx.reply(`🎨 ${creative.name}\n\n${creative.text}`);
+    await ctx.reply(`🎨 ${creative.name}\n\n${creative.text}`, {
+      parse_mode: "Markdown",
+    });
 
     const files = await CreativeFile.find({ creativeId: creative._id });
     if (files.length > 0) {

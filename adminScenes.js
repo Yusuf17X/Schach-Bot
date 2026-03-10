@@ -82,7 +82,6 @@ const addClassWizard = new Scenes.WizardScene(
 
 const addLectureWizard = new Scenes.WizardScene(
   "ADD_LECTURE_SCENE",
-
   // Step 0: The Routing Step
   async (ctx) => {
     const user = ctx.state.dbUser;
@@ -122,7 +121,6 @@ const addLectureWizard = new Scenes.WizardScene(
       return ctx.wizard.next();
     }
   },
-
   // Step 1: Owner Only - Process Stage Selection
   async (ctx) => {
     if (isCancel(ctx.message?.text))
@@ -143,7 +141,6 @@ const addLectureWizard = new Scenes.WizardScene(
     );
     return ctx.wizard.next();
   },
-
   // Step 2: Both Admin and Owner end up here to select the Class
   async (ctx) => {
     if (isCancel(ctx.message?.text))
@@ -166,7 +163,6 @@ const addLectureWizard = new Scenes.WizardScene(
     );
     return ctx.wizard.next();
   },
-
   //Step 3: Handle Category Selection & Initialize File Queue
   async (ctx) => {
     const text = ctx.message?.text;
@@ -187,7 +183,6 @@ const addLectureWizard = new Scenes.WizardScene(
     );
     return ctx.wizard.next();
   },
-
   // Step 4: Handle File Queue and Saving
   async (ctx) => {
     const text = ctx.message?.text;
