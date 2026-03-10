@@ -296,13 +296,11 @@ const viewCreativeWizard = new Scenes.WizardScene(
     const creative = await Creative.findOne({ name: ctx.message.text });
     if (!creative) return ctx.reply("⚠️ اختر زر من الازرار الموجودة.");
 
-    // MAGIC JUMP: We use copyMessage to clone the exact formatted message from the storage group!
-    // Note: Replace STORAGE_GROUP_ID with your actual group ID, and ensure your DB saves the messageId!
     try {
       await ctx.telegram.copyMessage(
         ctx.chat.id, // 1. Where it's going (The Student)
         process.env.CHANNEL_ID, // 2. Where it is right now (Your Storage Group ID)
-        creative.storageMsgId, // 3. The ID of the message saved in your database
+        creative.channelMsgId, // 3. The ID of the message saved in your database
       );
     } catch (error) {
       console.error("Failed to copy message:", error);
