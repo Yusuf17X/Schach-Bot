@@ -328,7 +328,7 @@ const viewCreativeWizard = new Scenes.WizardScene(
       } catch (e) {}
     }
 
-    return ctx.scene.leave();
+    // return ctx.scene.leave();
   },
 );
 

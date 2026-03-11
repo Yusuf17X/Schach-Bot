@@ -261,7 +261,7 @@ bot.hears("📝 تعديل الواجبات", (ctx) => {
     ctx.scene.enter("EDIT_HOMEWORK_SCENE");
 });
 
-bot.hears("📝 تعديل الجدول", (ctx) => {
+bot.hears("📅 تعديل الجدول", (ctx) => {
   const role = ctx.state.dbUser?.role;
   if (role === "owner" || role === "admin")
     ctx.scene.enter("EDIT_SCHEDULE_SCENE");
