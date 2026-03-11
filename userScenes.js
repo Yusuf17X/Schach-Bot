@@ -327,8 +327,6 @@ const viewCreativeWizard = new Scenes.WizardScene(
         await ctx.telegram.deleteMessage(ctx.chat.id, statusMsg.message_id);
       } catch (e) {}
     }
-
-    // return ctx.scene.leave();
   },
 );
 
@@ -347,16 +345,29 @@ const suggestWizard = new Scenes.WizardScene(
       return ctx.scene.leave();
     }
 
-    const suggestion = ctx.message.text;
+    // 1. Check if the message is actually text
+    const suggestion = ctx.message?.text;
+    if (!suggestion) {
+      await ctx.reply("⚠️ اكتب اقتراحك ك نص بس.", mainMenuKeyboard(ctx));
+      return;
+    }
 
-    const adminId = process.env.ADMIN_ID;
+    const owners = await User.find({ role: "owner" });
 
-    await ctx.telegram.sendMessage(
-      adminId,
-      `💡 New suggestion from ${ctx.from.username || ctx.from.first_name || ctx.from.id} (@${ctx.from.username}):\n\n${suggestion}`,
-    );
+    for (const owner of owners) {
+      if (owner.chatId !== ctx.from.id) {
+        try {
+          await ctx.telegram.sendMessage(
+            owner.chatId,
+            `💡 New suggestion from ${ctx.from.first_name || ctx.from.id} (@${ctx.from.username}):\n\n${suggestion}`,
+          );
+        } catch (error) {
+          console.error(`Could not send suggestion to ${owner.chatId}:`, error);
+        }
+      }
+    }
 
-    ctx.reply("✅ شكرا على اقتراحك!", mainMenuKeyboard(ctx));
+    await ctx.reply("✅ شكرا على اقتراحك!", mainMenuKeyboard(ctx));
     return ctx.scene.leave();
   },
 );

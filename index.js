@@ -67,8 +67,8 @@ bot.use(async (ctx, next) => {
       role: telegramId === ownerId ? "owner" : "user",
     });
 
-    const owners = await User.find({ role: "owner" });
     const usersCount = await User.countDocuments();
+    const owners = await User.find({ role: "owner" });
 
     owners.forEach((owner) => {
       if (owner.chatId !== user.chatId) {
