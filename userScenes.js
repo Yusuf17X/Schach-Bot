@@ -355,15 +355,13 @@ const suggestWizard = new Scenes.WizardScene(
     const owners = await User.find({ role: "owner" });
 
     for (const owner of owners) {
-      if (owner.chatId !== ctx.from.id) {
-        try {
-          await ctx.telegram.sendMessage(
-            owner.chatId,
-            `💡 New suggestion from ${ctx.from.first_name || ctx.from.id} (@${ctx.from.username}):\n\n${suggestion}`,
-          );
-        } catch (error) {
-          console.error(`Could not send suggestion to ${owner.chatId}:`, error);
-        }
+      try {
+        await ctx.telegram.sendMessage(
+          owner.chatId,
+          `💡 New suggestion from ${ctx.from.first_name || ctx.from.id} (@${ctx.from.username}):\n\n${suggestion}`,
+        );
+      } catch (error) {
+        console.error(`Could not send suggestion to ${owner.chatId}:`, error);
       }
     }
 

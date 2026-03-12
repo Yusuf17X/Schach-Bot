@@ -183,12 +183,13 @@ const addLectureWizard = new Scenes.WizardScene(
     );
     return ctx.wizard.next();
   },
-  // Step 4: Handle File Queue and Saving
+  // Step 4: Handle File Queue Collection
   async (ctx) => {
     const text = ctx.message?.text;
     if (isCancel(text))
       return ctx.scene.leave(ctx.reply("Cancelled.", adminPanelKeyboard(ctx)));
 
+    // 1. Collect files into the queue
     if (ctx.message?.document) {
       ctx.wizard.state.files.push(ctx.message);
       const fileName = ctx.message.document.file_name || "Unknown File";
@@ -196,6 +197,7 @@ const addLectureWizard = new Scenes.WizardScene(
       return;
     }
 
+    // 2. When they click Done, prepare the naming loop!
     if (text === "✅ Done") {
       if (ctx.wizard.state.files.length === 0) {
         return ctx.reply(
@@ -203,78 +205,117 @@ const addLectureWizard = new Scenes.WizardScene(
         );
       }
 
-      ctx.reply(
-        `⏳ Processing ${ctx.wizard.state.files.length} files... Please wait.`,
-        Markup.removeKeyboard(),
-      );
-
-      const sortedFiles = ctx.wizard.state.files.sort(
+      // Sort files to keep them in the order they were sent
+      ctx.wizard.state.files = ctx.wizard.state.files.sort(
         (a, b) => a.message_id - b.message_id,
       );
 
-      for (const msg of sortedFiles) {
-        const doc = msg.document;
-        const fileName = doc.file_name || "Unknown";
-        const title =
-          fileName.lastIndexOf(".") !== -1
-            ? fileName.substring(0, fileName.lastIndexOf("."))
-            : fileName;
+      // Setup the loop variables
+      ctx.wizard.state.currentIndex = 0;
+      ctx.wizard.state.uploadedNames = [];
 
-        try {
-          const channelMsg = await timeIt(
-            `TG: Send ${title} to Channel`,
-            ctx.telegram.sendDocument(process.env.CHANNEL_ID, doc.file_id, {
-              caption: `Lecture: ${title}`,
-            }),
-          );
+      const firstFile = ctx.wizard.state.files[0].document;
+      const originalName = firstFile.file_name || "Unknown";
 
-          await timeIt(
-            `DB: Save ${title}`,
-            Lecture.create({
-              title: title,
-              classId: ctx.wizard.state.classId,
-              fileId: channelMsg.document.file_id,
-              fileType: fileName.toLowerCase().endsWith(".pdf")
-                ? "pdf"
-                : "pptx",
-              channelMsgId: channelMsg.message_id,
-              category: ctx.wizard.state.category,
-            }),
-          );
-          ctx.reply(`✅ Saved: ${title}`);
-        } catch (error) {
-          console.error(error);
-          ctx.reply(`❌ Error saving: ${fileName}`);
-        }
-      }
-      ctx.reply("✅ All uploads finished.", adminPanelKeyboard(ctx));
+      // Ask for the first file's name
+      ctx.reply(
+        `📚 We have ${ctx.wizard.state.files.length} files to process.\n\n` +
+          `1️⃣ First file: ${originalName}\n` +
+          `✍️ Type the button name for this lecture (or type 'skip' to use the original name):`,
+        Markup.removeKeyboard(), // Hide the Done/Cancel keyboard so they type text
+      );
 
-      // Inside Step 4 of addLectureWizard, after the upload loop finishes:
+      return ctx.wizard.next();
+    }
+
+    ctx.reply("⚠️ Please send a PDF/PPTX document, or click '✅ Done'.");
+  },
+  // Step 5: Ask for names one by one and Save
+  async (ctx) => {
+    const text = ctx.message?.text;
+    if (isCancel(text))
+      return ctx.scene.leave(ctx.reply("Cancelled.", adminPanelKeyboard(ctx)));
+
+    if (!text) {
+      return ctx.reply("⚠️ Please type a text name or 'skip'.");
+    }
+
+    const currentIndex = ctx.wizard.state.currentIndex;
+    const currentMsg = ctx.wizard.state.files[currentIndex];
+    const doc = currentMsg.document;
+    const fileName = doc.file_name || "Unknown";
+
+    // Calculate original default title
+    const defaultTitle =
+      fileName.lastIndexOf(".") !== -1
+        ? fileName.substring(0, fileName.lastIndexOf("."))
+        : fileName;
+
+    // Determine the final title (Custom vs Default)
+    const finalTitle =
+      text.toLowerCase() === "skip" || text === "تخطي" ? defaultTitle : text;
+
+    ctx.reply(`⏳ Saving "${finalTitle}"...`);
+
+    try {
+      const channelMsg = await timeIt(
+        `TG: Send ${finalTitle} to Channel`,
+        ctx.telegram.sendDocument(process.env.CHANNEL_ID, doc.file_id, {
+          caption: `Lecture: ${finalTitle}`,
+        }),
+      );
+
+      await timeIt(
+        `DB: Save ${finalTitle}`,
+        Lecture.create({
+          title: finalTitle,
+          classId: ctx.wizard.state.classId,
+          fileId: channelMsg.document.file_id,
+          fileType: fileName.toLowerCase().endsWith(".pdf") ? "pdf" : "pptx",
+          channelMsgId: channelMsg.message_id,
+          category: ctx.wizard.state.category,
+        }),
+      );
+
+      ctx.reply(`✅ Saved: ${finalTitle}`);
+      ctx.wizard.state.uploadedNames.push(finalTitle); // Add custom name to notifications array
+    } catch (error) {
+      console.error(error);
+      ctx.reply(`❌ Error saving: ${fileName}`);
+    }
+    // ---------------------------------
+
+    // Move to the next file in the queue
+    ctx.wizard.state.currentIndex++;
+
+    // Check if there are more files to name
+    if (ctx.wizard.state.currentIndex < ctx.wizard.state.files.length) {
+      const nextFile =
+        ctx.wizard.state.files[ctx.wizard.state.currentIndex].document;
+      const nextOriginalName = nextFile.file_name || "Unknown";
+
+      ctx.reply(
+        `\n➡️ Next file: ${nextOriginalName}\n` +
+          `✍️ Type the name (or 'skip'):`,
+      );
+      return; // return WITHOUT ctx.wizard.next() keeps them in Step 5 for the next message!
+    } else {
+      // All files are named and saved! Send Notifications.
+      ctx.reply("✅ All uploads and naming finished.", adminPanelKeyboard(ctx));
 
       const stageObj = await Stage.findById(ctx.wizard.state.stageId);
       const classObj = await Class.findById(ctx.wizard.state.classId);
 
       if (stageObj && stageObj.telegramGroupId) {
-        // Extract the clean file names (without extensions) from the batch
-        const fileNames = sortedFiles.map((msg) => {
-          const fileName = msg.document.file_name || "Unknown";
-          return fileName.lastIndexOf(".") !== -1
-            ? fileName.substring(0, fileName.lastIndexOf("."))
-            : fileName;
-        });
-
-        // Send names to the notification queue
         queueGroupNotification(ctx, stageObj, {
           className: classObj.name,
-          fileNames: fileNames, // Passing the array of names
+          fileNames: ctx.wizard.state.uploadedNames,
           category: ctx.wizard.state.category,
         });
       }
 
       return ctx.scene.leave();
     }
-
-    ctx.reply("⚠️ Please send a PDF/PPTX document, or click '✅ Done'.");
   },
 );
 
