@@ -31,8 +31,8 @@ const showClassesMenu = async (ctx, stageId) => {
 
   // --- Inject Homework/Schedule if they exist ---
   const updatesRow = [];
-  if (stage.homeworkText) updatesRow.push("📝 الواجبات");
   if (stage.scheduleImageId) updatesRow.push("📅 الجدول");
+  if (stage.homeworkText) updatesRow.push("📝 الواجبات");
 
   if (updatesRow.length > 0) buttons.unshift(updatesRow);
   buttons.push(["🔝 القائمة الرئيسية"]);
