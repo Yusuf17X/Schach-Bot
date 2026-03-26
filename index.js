@@ -136,9 +136,15 @@ bot.start(async (ctx) => {
       entities: ctx.message.entities,
     });
   } else {
-    ctx.reply("اهلا", Markup.inlineKeyboard([["📝 الواجبات"]]), {
-      entities: ctx.message.entities,
-    });
+    ctx.reply(
+      "اهلا",
+      Markup.inlineKeyboard([
+        [Markup.button.callback("📝 الواجبات", "action_homework")],
+      ]),
+      {
+        entities: ctx.message.entities,
+      },
+    );
   }
 });
 
