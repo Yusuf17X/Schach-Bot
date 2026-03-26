@@ -301,7 +301,6 @@ bot.hears("📅 تعديل الجدول", (ctx) => {
 });
 
 bot.hears(/سجاج|سچاچ|@BITSchachBot/, async (ctx) => {
-  // 1. Array of random replies (Add your actual words here later!)
   const replies = [
     "سچاچ بالخدمة ؟🤓",
     "نعم؟ شتريد؟ 👀",
@@ -318,7 +317,6 @@ bot.hears(/سجاج|سچاچ|@BITSchachBot/, async (ctx) => {
     "سمعت اسمي 👀",
   ];
 
-  // 2. Pick a random word from the array
   const randomReply = replies[Math.floor(Math.random() * replies.length)];
 
   await ctx.reply(
