@@ -156,7 +156,10 @@ bot.start(async (ctx) => {
     });
   } else {
     ctx.reply(
-      "اهلا",
+      "اهلاً بيك #الاسم 👋".replace(
+        "#الاسم",
+        ctx.state.dbUser?.name || ctx.state.dbUser?.username || "",
+      ),
       Markup.inlineKeyboard([
         [Markup.button.callback("📝 الواجبات", "action_homework")],
       ]),
