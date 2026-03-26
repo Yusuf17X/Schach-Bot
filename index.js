@@ -126,16 +126,23 @@ bot.start(async (ctx) => {
   const welcomeText =
     settings.welcomeMessage.replace(
       "#الاسم",
-      ctx.state.dbUser?.name || ctx.state.dbUser?.username,
+      ctx.state.dbUser?.name || ctx.state.dbUser?.username || "",
     ) || "اهلا بيك ببوت سچاچ!";
-  ctx.reply(welcomeText, mainMenuKeyboard(ctx), {
-    entities: ctx.message.entities,
-  });
+
+  if (ctx.chat.type === "private") {
+    ctx.reply(welcomeText, mainMenuKeyboard(ctx), {
+      entities: ctx.message.entities,
+    });
+  } else {
+    ctx.reply("اهلا", {
+      entities: ctx.message.entities,
+    });
+  }
 });
 
 bot.command("link", async (ctx) => {
   if (ctx.chat.type === "private") {
-    return ctx.reply("🤨 استخدم هذا الامر بداخل بوت مرحلتك..");
+    return ctx.reply("🤨 استخدم هذا الامر بداخل كروب مرحلتك..");
   }
 
   const user = ctx.state.dbUser;
