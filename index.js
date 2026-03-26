@@ -280,6 +280,46 @@ bot.hears("📅 تعديل الجدول", (ctx) => {
     ctx.scene.enter("EDIT_SCHEDULE_SCENE");
 });
 
+bot.action("action_homework", async (ctx) => {
+  try {
+    // 1. ALWAYS answer the callback query first
+    // This stops the little clock/loading spinner on the button from spinning forever
+    await ctx.answerCbQuery();
+
+    // 2. Guard check
+    const isGroup =
+      ctx.chat?.type === "group" || ctx.chat?.type === "supergroup";
+    if (!isGroup) return;
+
+    // 3. Find the Stage linked to this specific group
+    const stage = await Stage.findOne({
+      telegramGroupId: ctx.chat.id.toString(),
+    });
+
+    if (!stage) {
+      return ctx.reply(
+        "⚠️ هذا الكروب غير مربوط بأي مرحلة حالياً. يرجى من الأدمن استخدام امر /link.",
+      );
+    }
+
+    // 4. Fetch the homework text
+    const homeworkText =
+      stage.homeworkText || "لا توجد واجبات مضافة حالياً لهذي المرحلة 🥳.";
+
+    // 5. Send the homework into the chat
+    await ctx.reply(`📚 واجبات ${stage.name}:\n\n${homeworkText}`);
+  } catch (error) {
+    console.error("Error in action_homework:", error);
+
+    // If something crashes, show a nice pop-up alert to the user who clicked it
+    await ctx
+      .answerCbQuery("❌ صار خطأ بجلب الواجبات.. جرب مرة ثانية.", {
+        show_alert: true,
+      })
+      .catch(() => null);
+  }
+});
+
 bot.catch(async (err, ctx) => {
   // 1. Log the error
   console.error(
