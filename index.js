@@ -315,6 +315,11 @@ bot.hears(/سجاج|سچاچ|@BITSchachBot/, async (ctx) => {
     "هاا؟ خلصت سوالفك؟ 🙄",
     "تفضل أمرني 😊",
     "سمعت اسمي 👀",
+    "شتريد خلّصني؟ 🤬",
+    "هاا؟ مو كافي؟ 😤",
+    "يمعود روح نام 🙄",
+    "يابه دروحح 🙄",
+    "كضيتها تسخت هسه تجي ؟ 🤣",
   ];
 
   const randomReply = replies[Math.floor(Math.random() * replies.length)];
