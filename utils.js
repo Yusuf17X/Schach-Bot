@@ -81,7 +81,7 @@ const queueGroupNotification = (ctx, stage, update) => {
   if (!notificationQueue[stageId].timeout) {
     notificationQueue[stageId].timeout = setTimeout(async () => {
       await sendBatchNotification(ctx, stageId, stage.telegramGroupId);
-    }, 30000);
+    }, 180000);
   }
 };
 
