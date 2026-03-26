@@ -49,7 +49,7 @@ bot.use(session());
 
 // Global User Middleware
 bot.use(async (ctx, next) => {
-  console.log(ctx.chat.id);
+  console.log(ctx.from.id, ctx.chat?.id);
 
   // saving users who interact directly with the bot
   if (!ctx.from) return next();
@@ -150,7 +150,7 @@ bot.start(async (ctx) => {
 
 bot.command("link", async (ctx) => {
   if (ctx.chat.type === "private") {
-    return ctx.reply("🤨 استخدم هذا الامر بداخل كروب مرحلتك..");
+    return ctx.reply("🤨 استخدم هذا الامر بكروب مرحلتك..");
   }
 
   const user = ctx.state.dbUser;
