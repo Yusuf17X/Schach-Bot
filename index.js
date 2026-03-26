@@ -118,6 +118,19 @@ bot.telegram.setMyCommands([], {
   scope: { type: "all_group_chats" },
 });
 
+bot.telegram.setMyCommands(
+  [
+    { command: "start", description: "تشغيل البوت" },
+    {
+      command: "suggest",
+      description: "اقتراح ميزة لتطوير البوت او الابلاغ عن مشكلة.",
+    },
+  ],
+  {
+    scope: { type: "all_private_chats" },
+  },
+);
+
 bot.start(async (ctx) => {
   let settings = await timeIt(
     "Fetch Bot Settings: Welcome Message",
