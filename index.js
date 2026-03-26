@@ -1,5 +1,5 @@
 require("dotenv").config();
-const { Telegraf, Scenes, session } = require("telegraf");
+const { Telegraf, Scenes, session, Markup } = require("telegraf");
 const mongoose = require("mongoose");
 const { User, BotSettings, Stage } = require("./models");
 const { mainMenuKeyboard, adminPanelKeyboard, timeIt } = require("./utils");
@@ -129,12 +129,14 @@ bot.start(async (ctx) => {
       ctx.state.dbUser?.name || ctx.state.dbUser?.username || "",
     ) || "اهلا بيك ببوت سچاچ!";
 
-  if (ctx.chat.type === "private") {
+  const isGroup = ctx.chat.type === "group" || ctx.chat.type === "supergroup";
+
+  if (!isGroup) {
     ctx.reply(welcomeText, mainMenuKeyboard(ctx), {
       entities: ctx.message.entities,
     });
   } else {
-    ctx.reply("اهلا", {
+    ctx.reply("اهلا", Markup.keyboard([["📝 الواجبات"]]), {
       entities: ctx.message.entities,
     });
   }
@@ -168,11 +170,9 @@ bot.command("link", async (ctx) => {
     stage.telegramGroupId = ctx.chat.id.toString();
     await stage.save();
 
-    return ctx.reply(
-      `✅ Success! This group is now officially linked to **${stage.name}**.`,
-      `تم. البوت انربط ب ${stage.name} ✅`,
-      { entities: ctx.message.entities },
-    );
+    return ctx.reply(`تم. البوت انربط ب ${stage.name} ✅`, {
+      entities: ctx.message.entities,
+    });
   } catch (error) {
     console.error(error);
     return ctx.reply("صار خطأ بالربط.. راسل مطور البوت.");
