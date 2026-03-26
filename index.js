@@ -112,6 +112,12 @@ const stage = new Scenes.Stage([
 bot.use(stage.middleware());
 
 // --- ROUTERS ---
+
+// 1. Remove all '/' command suggestions for EVERYONE in groups
+bot.telegram.setMyCommands([], {
+  scope: { type: "all_group_chats" },
+});
+
 bot.start(async (ctx) => {
   let settings = await timeIt(
     "Fetch Bot Settings: Welcome Message",
