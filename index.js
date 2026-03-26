@@ -136,7 +136,7 @@ bot.start(async (ctx) => {
       entities: ctx.message.entities,
     });
   } else {
-    ctx.reply("اهلا", Markup.keyboard([["📝 الواجبات"]]), {
+    ctx.reply("اهلا", Markup.inlineKeyboard([["📝 الواجبات"]]), {
       entities: ctx.message.entities,
     });
   }
