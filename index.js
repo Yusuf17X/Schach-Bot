@@ -300,12 +300,22 @@ bot.hears("📅 تعديل الجدول", (ctx) => {
     ctx.scene.enter("EDIT_SCHEDULE_SCENE");
 });
 
-bot.hears(/سجاج|سچاچ/, async (ctx) => {
+bot.hears(/سجاج|سچاچ|@BITSchachBot/, async (ctx) => {
   // 1. Array of random replies (Add your actual words here later!)
   const replies = [
-    "هلا والله! تفضل 🫡",
-    "نعم؟ محتاج شي؟ 👀",
-    "سچاچ بالخدمة 🤓",
+    "سچاچ بالخدمة ؟🤓",
+    "نعم؟ شتريد؟ 👀",
+    "هااا كافي دوختني 😵‍💫",
+    "شلونك؟ عينك على شي؟ 😏",
+    "تفضل؟ شتريد؟ 🤨",
+    "يمعود شتريد؟ 🧐",
+    "حاضر؟ أمرك؟ 😎",
+    "لا هلا ، شتريد تسوي؟ 😜",
+    "ها يمعود؟ شكد منتظرك 😤",
+    "شفتك؟ شتريد؟ 😆",
+    "هاا؟ خلصت سوالفك؟ 🙄",
+    "تفضل أمرني 😊",
+    "سمعت اسمي 👀",
   ];
 
   // 2. Pick a random word from the array
