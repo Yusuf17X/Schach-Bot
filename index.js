@@ -176,9 +176,7 @@ bot.command("link", async (ctx) => {
     stage.telegramGroupId = ctx.chat.id.toString();
     await stage.save();
 
-    return ctx.reply(`تم. البوت انربط ب ${stage.name} ✅`, {
-      entities: ctx.message.entities,
-    });
+    return ctx.reply(`تم. البوت انربط ب ${stage.name} ✅`);
   } catch (error) {
     console.error(error);
     return ctx.reply("صار خطأ بالربط.. راسل مطور البوت.");
