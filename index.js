@@ -300,6 +300,25 @@ bot.hears("📅 تعديل الجدول", (ctx) => {
     ctx.scene.enter("EDIT_SCHEDULE_SCENE");
 });
 
+bot.hears(/سجاج|سچاچ/, async (ctx) => {
+  // 1. Array of random replies (Add your actual words here later!)
+  const replies = [
+    "هلا والله! تفضل 🫡",
+    "نعم؟ محتاج شي؟ 👀",
+    "سچاچ بالخدمة 🤓",
+  ];
+
+  // 2. Pick a random word from the array
+  const randomReply = replies[Math.floor(Math.random() * replies.length)];
+
+  await ctx.reply(
+    randomReply,
+    Markup.inlineKeyboard([
+      [Markup.button.callback("📝 الواجبات", "action_homework")],
+    ]),
+  );
+});
+
 bot.action("action_homework", async (ctx) => {
   try {
     // 1. ALWAYS answer the callback query first
