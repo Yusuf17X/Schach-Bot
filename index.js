@@ -123,7 +123,7 @@ bot.telegram.setMyCommands(
     { command: "start", description: "تشغيل البوت" },
     {
       command: "suggest",
-      description: "اقتراح ميزة لتطوير البوت او الابلاغ عن مشكلة.",
+      description: "اقتراح ميزة لتطوير البوت او الابلاغ عن مشكلة",
     },
   ],
   {
