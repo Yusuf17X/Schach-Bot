@@ -171,7 +171,7 @@ bot.command("link", async (ctx) => {
 
     const stage = await Stage.findById(stageId);
     if (!stage)
-      return new Error("المرحلة المحددة غير موجودة في قاعدة البيانات.");
+      throw new Error("المرحلة المحددة غير موجودة في قاعدة البيانات.");
 
     stage.telegramGroupId = ctx.chat.id.toString();
     await stage.save();
