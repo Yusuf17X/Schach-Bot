@@ -301,8 +301,8 @@ bot.hears("📅 تعديل الجدول", (ctx) => {
 });
 
 bot.hears(/سجاج|سچاچ|@BITSchachBot/, async (ctx) => {
-  const isGroup = ctx.chat.type === "group" || ctx.chat.type === "supergroup";
-  if (!isGroup) return; // only reply to these keywords in groups, ignore in private chats
+  // const isGroup = ctx.chat.type === "group" || ctx.chat.type === "supergroup";
+  // if (!isGroup) return; // only reply to these keywords in groups, ignore in private chats
 
   const replies = [
     "سچاچ بالخدمة ؟🤓",
