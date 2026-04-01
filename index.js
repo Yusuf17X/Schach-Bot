@@ -47,6 +47,29 @@ const bot = new Telegraf(process.env.BOT_TOKEN);
 
 bot.use(session());
 
+// --- MAINTENANCE MODE MIDDLEWARE ---
+bot.use(async (ctx, next) => {
+  // const maintenanceMessage =
+  //   "⚠️ البوت حالياً تحت الصيانة بسبب تحديثات في السيرفر. نعتذر عن الازعاج ونعود قريباً!";
+  const maintenanceMessage = "البوت تحت الصيانة..";
+
+  try {
+    // If they send a text/media message
+    if (ctx.chat.type === "private" && ctx.message) {
+      await ctx.reply(maintenanceMessage);
+    }
+    // If they click an inline button (like your homework button)
+    else if (ctx.callbackQuery) {
+      await ctx.answerCbQuery();
+    }
+  } catch (error) {
+    console.error("Maintenance message error:", error);
+  }
+
+  // CRITICAL: We do NOT call next() here.
+  // This acts as a brick wall, stopping the bot from reading the database.
+});
+
 // Global User Middleware
 bot.use(async (ctx, next) => {
   console.log(ctx.from.id, ctx.chat?.id);
