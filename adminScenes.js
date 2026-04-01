@@ -1,15 +1,5 @@
 const { Scenes, Markup } = require("telegraf");
-const {
-  Stage,
-  Class,
-  Lecture,
-  User,
-  Archive,
-  ArchiveFile,
-  Creative,
-  CreativeFile,
-  BotSettings,
-} = require("./models");
+const prisma = require("./models");
 const {
   timeIt,
   isCancel,
@@ -31,7 +21,7 @@ const addStageWizard = new Scenes.WizardScene(
     if (isCancel(ctx.message?.text))
       return ctx.scene.leave(ctx.reply("Cancelled.", adminPanelKeyboard(ctx))); // FIX: Executed the function
 
-    await timeIt("DB: Create Stage", Stage.create({ name: ctx.message.text }));
+    await timeIt("DB: Create Stage", prisma.stage.create({ data: { name: ctx.message.text } }));
     ctx.reply(
       `✅ Stage "${ctx.message.text}" created!`,
       adminPanelKeyboard(ctx),
@@ -43,7 +33,7 @@ const addStageWizard = new Scenes.WizardScene(
 const addClassWizard = new Scenes.WizardScene(
   "ADD_CLASS_SCENE",
   async (ctx) => {
-    const stages = await timeIt("DB: Fetch Stages", Stage.find());
+    const stages = await timeIt("DB: Fetch Stages", prisma.stage.findMany());
     const buttons = stages.map((s) => [s.name]);
     buttons.push(["❌ Cancel"]);
     ctx.reply(
@@ -55,10 +45,10 @@ const addClassWizard = new Scenes.WizardScene(
   async (ctx) => {
     if (isCancel(ctx.message?.text))
       return ctx.scene.leave(ctx.reply("Cancelled.", adminPanelKeyboard(ctx)));
-    const stage = await Stage.findOne({ name: ctx.message.text });
+    const stage = await prisma.stage.findFirst({ where: { name: ctx.message.text } });
     if (!stage) return ctx.reply("Select a valid stage from the keyboard.");
 
-    ctx.wizard.state.stageId = stage._id;
+    ctx.wizard.state.stageId = stage.id;
     ctx.reply(
       "✍️ Type the name of the new Class:",
       Markup.keyboard([["❌ Cancel"]]).resize(),
@@ -70,9 +60,11 @@ const addClassWizard = new Scenes.WizardScene(
       return ctx.scene.leave(ctx.reply("Cancelled.", adminPanelKeyboard(ctx)));
     await timeIt(
       "DB: Create Class",
-      Class.create({
-        name: ctx.message.text,
-        stageId: ctx.wizard.state.stageId,
+      prisma.class.create({
+        data: {
+          name: ctx.message.text,
+          stageId: ctx.wizard.state.stageId,
+        },
       }),
     );
     ctx.reply(`✅ Class created!`, adminPanelKeyboard(ctx));
@@ -87,7 +79,7 @@ const addLectureWizard = new Scenes.WizardScene(
     const user = ctx.state.dbUser;
 
     if (user.role === "admin") {
-      const stage = await Stage.findById(user.managedStageId);
+      const stage = await prisma.stage.findUnique({ where: { id: user.managedStageId } });
       if (!stage)
         return ctx.scene.leave(
           ctx.reply(
@@ -96,8 +88,8 @@ const addLectureWizard = new Scenes.WizardScene(
           ),
         );
 
-      ctx.wizard.state.stageId = stage._id;
-      const classes = await Class.find({ stageId: stage._id });
+      ctx.wizard.state.stageId = stage.id;
+      const classes = await prisma.class.findMany({ where: { stageId: stage.id } });
 
       ctx.reply(
         `✅ Adding to **${stage.name}**.\n\nSelect the Class:`,
@@ -110,7 +102,7 @@ const addLectureWizard = new Scenes.WizardScene(
       ctx.wizard.selectStep(2);
       return;
     } else {
-      const stages = await Stage.find();
+      const stages = await prisma.stage.findMany();
       ctx.reply(
         "Select the Stage:",
         Markup.keyboard([
@@ -126,11 +118,11 @@ const addLectureWizard = new Scenes.WizardScene(
     if (isCancel(ctx.message?.text))
       return ctx.scene.leave(ctx.reply("Cancelled.", adminPanelKeyboard(ctx)));
 
-    const stage = await Stage.findOne({ name: ctx.message.text });
+    const stage = await prisma.stage.findFirst({ where: { name: ctx.message.text } });
     if (!stage) return ctx.reply("⚠️ Please select a valid stage.");
 
-    ctx.wizard.state.stageId = stage._id;
-    const classes = await Class.find({ stageId: stage._id });
+    ctx.wizard.state.stageId = stage.id;
+    const classes = await prisma.class.findMany({ where: { stageId: stage.id } });
 
     ctx.reply(
       "Select the Class:",
@@ -146,15 +138,14 @@ const addLectureWizard = new Scenes.WizardScene(
     if (isCancel(ctx.message?.text))
       return ctx.scene.leave(ctx.reply("Cancelled.", adminPanelKeyboard(ctx)));
 
-    const selectedClass = await Class.findOne({
-      name: ctx.message.text,
-      stageId: ctx.wizard.state.stageId,
+    const selectedClass = await prisma.class.findFirst({
+      where: { name: ctx.message.text, stageId: ctx.wizard.state.stageId },
     });
 
     if (!selectedClass)
       return ctx.reply("⚠️ Please select a valid class from the keyboard.");
 
-    ctx.wizard.state.classId = selectedClass._id;
+    ctx.wizard.state.classId = selectedClass.id;
 
     // Ask for the Category instead of immediately asking for files!
     ctx.reply(
@@ -267,13 +258,15 @@ const addLectureWizard = new Scenes.WizardScene(
 
       await timeIt(
         `DB: Save ${finalTitle}`,
-        Lecture.create({
-          title: finalTitle,
-          classId: ctx.wizard.state.classId,
-          fileId: channelMsg.document.file_id,
-          fileType: fileName.toLowerCase().endsWith(".pdf") ? "pdf" : "pptx",
-          channelMsgId: channelMsg.message_id,
-          category: ctx.wizard.state.category,
+        prisma.lecture.create({
+          data: {
+            title: finalTitle,
+            classId: ctx.wizard.state.classId,
+            fileId: channelMsg.document.file_id,
+            fileType: fileName.toLowerCase().endsWith(".pdf") ? "pdf" : "pptx",
+            channelMsgId: channelMsg.message_id,
+            category: ctx.wizard.state.category,
+          },
         }),
       );
 
@@ -303,8 +296,8 @@ const addLectureWizard = new Scenes.WizardScene(
       // All files are named and saved! Send Notifications.
       ctx.reply("✅ All uploads and naming finished.", adminPanelKeyboard(ctx));
 
-      const stageObj = await Stage.findById(ctx.wizard.state.stageId);
-      const classObj = await Class.findById(ctx.wizard.state.classId);
+      const stageObj = await prisma.stage.findUnique({ where: { id: ctx.wizard.state.stageId } });
+      const classObj = await prisma.class.findUnique({ where: { id: ctx.wizard.state.classId } });
 
       if (stageObj && stageObj.telegramGroupId) {
         queueGroupNotification(ctx, stageObj, {
@@ -324,7 +317,7 @@ const addLectureWizard = new Scenes.WizardScene(
 const delStageWizard = new Scenes.WizardScene(
   "DEL_STAGE_SCENE",
   async (ctx) => {
-    const stages = await timeIt("DB: Fetch Stages", Stage.find());
+    const stages = await timeIt("DB: Fetch Stages", prisma.stage.findMany());
     if (stages.length === 0)
       return ctx.scene.leave(
         ctx.reply("No stages to delete.", adminPanelKeyboard(ctx)),
@@ -339,14 +332,14 @@ const delStageWizard = new Scenes.WizardScene(
   async (ctx) => {
     if (isCancel(ctx.message?.text))
       return ctx.scene.leave(ctx.reply("Cancelled.", adminPanelKeyboard(ctx)));
-    const stage = await Stage.findOne({ name: ctx.message.text });
+    const stage = await prisma.stage.findFirst({ where: { name: ctx.message.text } });
     if (!stage) return ctx.reply("Select a valid stage.");
 
     ctx.reply("⏳ Deleting stage and cleaning up files...");
 
-    const classes = await Class.find({ stageId: stage._id });
+    const classes = await prisma.class.findMany({ where: { stageId: stage.id } });
     for (const c of classes) {
-      const lectures = await Lecture.find({ classId: c._id });
+      const lectures = await prisma.lecture.findMany({ where: { classId: c.id } });
       for (const l of lectures) {
         try {
           await ctx.telegram.deleteMessage(
@@ -357,10 +350,10 @@ const delStageWizard = new Scenes.WizardScene(
           console.log(`Failed to delete msg ${l.channelMsgId} from channel.`); // FIX: Added logging
         }
       }
-      await Lecture.deleteMany({ classId: c._id });
+      await prisma.lecture.deleteMany({ where: { classId: c.id } });
     }
-    await Class.deleteMany({ stageId: stage._id });
-    await Stage.findByIdAndDelete(stage._id);
+    await prisma.class.deleteMany({ where: { stageId: stage.id } });
+    await prisma.stage.delete({ where: { id: stage.id } });
 
     ctx.reply(
       `✅ Stage "${stage.name}" and all its contents completely deleted.`,
@@ -373,7 +366,7 @@ const delStageWizard = new Scenes.WizardScene(
 const delClassWizard = new Scenes.WizardScene(
   "DEL_CLASS_SCENE",
   async (ctx) => {
-    const stages = await timeIt("DB: Fetch Stages", Stage.find());
+    const stages = await timeIt("DB: Fetch Stages", prisma.stage.findMany());
     ctx.reply(
       "Select the Stage containing the Class to delete:",
       Markup.keyboard([...stages.map((s) => [s.name]), ["❌ Cancel"]]).resize(),
@@ -383,12 +376,12 @@ const delClassWizard = new Scenes.WizardScene(
   async (ctx) => {
     if (isCancel(ctx.message?.text))
       return ctx.scene.leave(ctx.reply("Cancelled.", adminPanelKeyboard(ctx)));
-    const stage = await Stage.findOne({ name: ctx.message.text });
+    const stage = await prisma.stage.findFirst({ where: { name: ctx.message.text } });
     if (!stage) return;
 
     const classes = await timeIt(
       "DB: Fetch Classes",
-      Class.find({ stageId: stage._id }),
+      prisma.class.findMany({ where: { stageId: stage.id } }),
     );
     if (classes.length === 0)
       return ctx.scene.leave(
@@ -407,12 +400,12 @@ const delClassWizard = new Scenes.WizardScene(
   async (ctx) => {
     if (isCancel(ctx.message?.text))
       return ctx.scene.leave(ctx.reply("Cancelled.", adminPanelKeyboard(ctx)));
-    const selectedClass = await Class.findOne({ name: ctx.message.text });
+    const selectedClass = await prisma.class.findFirst({ where: { name: ctx.message.text } });
     if (!selectedClass) return;
 
     ctx.reply("⏳ Deleting class and cleaning up files...");
 
-    const lectures = await Lecture.find({ classId: selectedClass._id });
+    const lectures = await prisma.lecture.findMany({ where: { classId: selectedClass.id } });
     for (const l of lectures) {
       try {
         await ctx.telegram.deleteMessage(
@@ -423,8 +416,8 @@ const delClassWizard = new Scenes.WizardScene(
         console.log(`Failed to delete msg ${l.channelMsgId} from channel.`);
       }
     }
-    await Lecture.deleteMany({ classId: selectedClass._id });
-    await Class.findByIdAndDelete(selectedClass._id);
+    await prisma.lecture.deleteMany({ where: { classId: selectedClass.id } });
+    await prisma.class.delete({ where: { id: selectedClass.id } });
 
     ctx.reply(
       `✅ Class "${selectedClass.name}" and all its files deleted.`,
@@ -437,7 +430,7 @@ const delClassWizard = new Scenes.WizardScene(
 const delLectureWizard = new Scenes.WizardScene(
   "DEL_LECTURE_SCENE",
   async (ctx) => {
-    const stages = await timeIt("DB: Fetch Stages", Stage.find());
+    const stages = await timeIt("DB: Fetch Stages", prisma.stage.findMany());
     ctx.reply(
       "Select the Stage:",
       Markup.keyboard([...stages.map((s) => [s.name]), ["❌ Cancel"]]).resize(),
@@ -447,12 +440,12 @@ const delLectureWizard = new Scenes.WizardScene(
   async (ctx) => {
     if (isCancel(ctx.message?.text))
       return ctx.scene.leave(ctx.reply("Cancelled.", adminPanelKeyboard(ctx)));
-    const stage = await Stage.findOne({ name: ctx.message.text });
+    const stage = await prisma.stage.findFirst({ where: { name: ctx.message.text } });
     if (!stage) return;
 
     const classes = await timeIt(
       "DB: Fetch Classes",
-      Class.find({ stageId: stage._id }),
+      prisma.class.findMany({ where: { stageId: stage.id } }),
     );
     ctx.reply(
       "Select the Class:",
@@ -466,12 +459,12 @@ const delLectureWizard = new Scenes.WizardScene(
   async (ctx) => {
     if (isCancel(ctx.message?.text))
       return ctx.scene.leave(ctx.reply("Cancelled.", adminPanelKeyboard(ctx)));
-    const selectedClass = await Class.findOne({ name: ctx.message.text });
+    const selectedClass = await prisma.class.findFirst({ where: { name: ctx.message.text } });
     if (!selectedClass) return;
 
     const lectures = await timeIt(
       "DB: Fetch Lectures",
-      Lecture.find({ classId: selectedClass._id }),
+      prisma.lecture.findMany({ where: { classId: selectedClass.id } }),
     );
     if (lectures.length === 0)
       return ctx.scene.leave(
@@ -490,7 +483,7 @@ const delLectureWizard = new Scenes.WizardScene(
   async (ctx) => {
     if (isCancel(ctx.message?.text))
       return ctx.scene.leave(ctx.reply("Cancelled.", adminPanelKeyboard(ctx)));
-    const lecture = await Lecture.findOne({ title: ctx.message.text });
+    const lecture = await prisma.lecture.findFirst({ where: { title: ctx.message.text } });
     if (!lecture) return;
 
     try {
@@ -501,7 +494,7 @@ const delLectureWizard = new Scenes.WizardScene(
     } catch (e) {
       console.log(`Failed to delete msg ${lecture.channelMsgId} from channel.`);
     }
-    await Lecture.findByIdAndDelete(lecture._id);
+    await prisma.lecture.delete({ where: { id: lecture.id } });
 
     ctx.reply(`✅ Lecture deleted.`, adminPanelKeyboard(ctx));
     return ctx.scene.leave();
@@ -525,7 +518,7 @@ const broadcastWizard = new Scenes.WizardScene(
         ctx.reply("Broadcast cancelled.", adminPanelKeyboard(ctx)),
       );
 
-    const users = await User.find();
+    const users = await prisma.user.findMany();
     let sent = 0;
     ctx.reply(`⏳ Broadcasting to ${users.length} users...`);
 
@@ -562,9 +555,9 @@ const addArchiveWizard = new Scenes.WizardScene(
     try {
       const archive = await timeIt(
         "DB: Create Archive",
-        Archive.create({ name: ctx.message.text }),
+        prisma.archive.create({ data: { name: ctx.message.text } }),
       );
-      ctx.wizard.state.archiveId = archive._id;
+      ctx.wizard.state.archiveId = archive.id;
       ctx.wizard.state.files = [];
 
       ctx.reply(
@@ -620,11 +613,13 @@ const addArchiveWizard = new Scenes.WizardScene(
             process.env.CHANNEL_ID,
             msg,
           );
-          await ArchiveFile.create({
-            archiveId: ctx.wizard.state.archiveId,
-            fileId: fileId,
-            title: title,
-            channelMsgId: channelMsg.message_id,
+          await prisma.archiveFile.create({
+            data: {
+              archiveId: ctx.wizard.state.archiveId,
+              fileId: fileId,
+              title: title,
+              channelMsgId: channelMsg.message_id,
+            },
           });
         } catch (error) {
           console.error("Archive Save Error", error);
@@ -673,14 +668,16 @@ const addCreativeWizard = new Scenes.WizardScene(
 
       const creative = await timeIt(
         "DB: Create Creative",
-        Creative.create({
-          name: ctx.wizard.state.creativeName,
-          text: ctx.message.text,
-          channelMsgId: channelMsg.message_id,
+        prisma.creative.create({
+          data: {
+            name: ctx.wizard.state.creativeName,
+            text: ctx.message.text,
+            channelMsgId: channelMsg.message_id,
+          },
         }),
       );
 
-      ctx.wizard.state.creativeId = creative._id;
+      ctx.wizard.state.creativeId = creative.id;
       ctx.wizard.state.files = [];
 
       ctx.reply(
@@ -731,11 +728,13 @@ const addCreativeWizard = new Scenes.WizardScene(
             process.env.CHANNEL_ID,
             msg,
           );
-          await CreativeFile.create({
-            creativeId: ctx.wizard.state.creativeId,
-            fileId: fileId,
-            title: title,
-            channelMsgId: channelMsg.message_id,
+          await prisma.creativeFile.create({
+            data: {
+              creativeId: ctx.wizard.state.creativeId,
+              fileId: fileId,
+              title: title,
+              channelMsgId: channelMsg.message_id,
+            },
           });
         } catch (error) {}
       }
@@ -750,7 +749,7 @@ const addCreativeWizard = new Scenes.WizardScene(
 const delArchiveWizard = new Scenes.WizardScene(
   "DEL_ARCHIVE_SCENE",
   async (ctx) => {
-    const archives = await timeIt("DB: Fetch Archives", Archive.find());
+    const archives = await timeIt("DB: Fetch Archives", prisma.archive.findMany());
     if (archives.length === 0)
       return ctx.scene.leave(
         ctx.reply("No archives to delete.", adminPanelKeyboard(ctx)),
@@ -768,14 +767,14 @@ const delArchiveWizard = new Scenes.WizardScene(
   async (ctx) => {
     if (isCancel(ctx.message?.text))
       return ctx.scene.leave(ctx.reply("Cancelled.", adminPanelKeyboard(ctx)));
-    const archive = await Archive.findOne({ name: ctx.message.text });
+    const archive = await prisma.archive.findFirst({ where: { name: ctx.message.text } });
     if (!archive) return ctx.reply("Select a valid archive.");
 
     const statusMsg = await ctx.reply(
       "⏳ Deleting archive and cleaning up files...",
     );
 
-    const files = await ArchiveFile.find({ archiveId: archive._id });
+    const files = await prisma.archiveFile.findMany({ where: { archiveId: archive.id } });
     for (const f of files) {
       try {
         await ctx.telegram.deleteMessage(
@@ -784,8 +783,8 @@ const delArchiveWizard = new Scenes.WizardScene(
         );
       } catch (e) {}
     }
-    await ArchiveFile.deleteMany({ archiveId: archive._id });
-    await Archive.findByIdAndDelete(archive._id);
+    await prisma.archiveFile.deleteMany({ where: { archiveId: archive.id } });
+    await prisma.archive.delete({ where: { id: archive.id } });
 
     try {
       await ctx.telegram.deleteMessage(ctx.chat.id, statusMsg.message_id);
@@ -803,7 +802,7 @@ const delArchiveWizard = new Scenes.WizardScene(
 const delCreativeWizard = new Scenes.WizardScene(
   "DEL_CREATIVE_SCENE",
   async (ctx) => {
-    const creatives = await timeIt("DB: Fetch Creatives", Creative.find());
+    const creatives = await timeIt("DB: Fetch Creatives", prisma.creative.findMany());
     if (creatives.length === 0)
       return ctx.scene.leave(
         ctx.reply("No creative topics to delete.", adminPanelKeyboard(ctx)),
@@ -821,7 +820,7 @@ const delCreativeWizard = new Scenes.WizardScene(
   async (ctx) => {
     if (isCancel(ctx.message?.text))
       return ctx.scene.leave(ctx.reply("Cancelled.", adminPanelKeyboard(ctx)));
-    const creative = await Creative.findOne({ name: ctx.message.text });
+    const creative = await prisma.creative.findFirst({ where: { name: ctx.message.text } });
     if (!creative) return ctx.reply("Select a valid creative topic.");
 
     ctx.reply("⏳ Deleting creative topic and cleaning up files...");
@@ -833,7 +832,7 @@ const delCreativeWizard = new Scenes.WizardScene(
       );
     } catch (e) {}
 
-    const files = await CreativeFile.find({ creativeId: creative._id });
+    const files = await prisma.creativeFile.findMany({ where: { creativeId: creative.id } });
     for (const f of files) {
       try {
         await ctx.telegram.deleteMessage(
@@ -842,8 +841,8 @@ const delCreativeWizard = new Scenes.WizardScene(
         );
       } catch (e) {}
     }
-    await CreativeFile.deleteMany({ creativeId: creative._id });
-    await Creative.findByIdAndDelete(creative._id);
+    await prisma.creativeFile.deleteMany({ where: { creativeId: creative.id } });
+    await prisma.creative.delete({ where: { id: creative.id } });
 
     ctx.reply(
       `✅ Creative topic "${creative.name}" and all its files deleted.`,
@@ -870,15 +869,15 @@ const promoteAdminWizard = new Scenes.WizardScene(
     if (isNaN(targetUserId))
       return ctx.reply("⚠️ Please send a valid numeric ID.");
 
-    const targetUser = await User.findOne({ chatId: targetUserId });
+    const targetUser = await prisma.user.findFirst({ where: { chatId: targetUserId } });
     if (!targetUser)
       return ctx.reply(
         "❌ User not found in database. They must start the bot first.",
       );
 
-    ctx.wizard.state.targetUserId = targetUser._id; // FIX: Saved state properly
+    ctx.wizard.state.targetUserId = targetUser.id; // FIX: Saved state properly
 
-    const stages = await Stage.find();
+    const stages = await prisma.stage.findMany();
     ctx.reply(
       `✅ User found: ${targetUser.username || targetUserId}\n\nWhich Stage will they manage?`,
       Markup.keyboard([...stages.map((s) => [s.name]), ["❌ Cancel"]]).resize(),
@@ -889,12 +888,12 @@ const promoteAdminWizard = new Scenes.WizardScene(
     if (isCancel(ctx.message?.text))
       return ctx.scene.leave(ctx.reply("Cancelled.", adminPanelKeyboard(ctx)));
 
-    const stage = await Stage.findOne({ name: ctx.message.text });
+    const stage = await prisma.stage.findFirst({ where: { name: ctx.message.text } });
     if (!stage) return ctx.reply("⚠️ Please select a valid stage.");
 
-    await User.findByIdAndUpdate(ctx.wizard.state.targetUserId, {
-      role: "admin",
-      managedStageId: stage._id,
+    await prisma.user.update({
+      where: { id: ctx.wizard.state.targetUserId },
+      data: { role: "admin", managedStageId: stage.id },
     });
 
     ctx.reply(
@@ -911,7 +910,7 @@ const broadcastGroupWizard = new Scenes.WizardScene(
     const user = ctx.state.dbUser;
 
     if (user.role === "admin") {
-      const stage = await Stage.findById(user.managedStageId);
+      const stage = await prisma.stage.findUnique({ where: { id: user.managedStageId } });
       if (!stage || !stage.telegramGroupId) {
         return ctx.scene.leave(
           ctx.reply(
@@ -930,7 +929,9 @@ const broadcastGroupWizard = new Scenes.WizardScene(
       ctx.wizard.selectStep(2);
       return;
     } else {
-      const stages = await Stage.find({ telegramGroupId: { $ne: null } });
+      const stages = await prisma.stage.findMany({
+        where: { telegramGroupId: { not: null } },
+      });
       if (stages.length === 0)
         return ctx.scene.leave(
           ctx.reply(
@@ -953,7 +954,7 @@ const broadcastGroupWizard = new Scenes.WizardScene(
     if (isCancel(ctx.message?.text))
       return ctx.scene.leave(ctx.reply("Cancelled.", adminPanelKeyboard(ctx)));
 
-    const stage = await Stage.findOne({ name: ctx.message.text });
+    const stage = await prisma.stage.findFirst({ where: { name: ctx.message.text } });
     if (!stage || !stage.telegramGroupId)
       return ctx.reply("⚠️ Invalid selection or group not linked.");
 
@@ -1004,10 +1005,10 @@ const editWelcomeMsgWizard = new Scenes.WizardScene(
 
     await timeIt(
       "DB: Update Welcome Message",
-      BotSettings.findOneAndUpdate(
-        { singletonId: "default" },
-        { welcomeMessage: newMsg },
-      ),
+      prisma.botSettings.update({
+        where: { singletonId: "default" },
+        data: { welcomeMessage: newMsg },
+      }),
     );
 
     ctx.reply(
@@ -1035,7 +1036,7 @@ const editHomeworkWizard = new Scenes.WizardScene(
     }
 
     // If Owner: Ask which stage to edit
-    const stages = await Stage.find();
+    const stages = await prisma.stage.findMany();
     await ctx.reply(
       "🎓 Select the Stage to update homework for:",
       Markup.keyboard([...stages.map((s) => [s.name]), ["❌ Cancel"]]).resize(),
@@ -1048,10 +1049,10 @@ const editHomeworkWizard = new Scenes.WizardScene(
       await ctx.reply("Cancelled.", mainMenuKeyboard(ctx));
       return ctx.scene.leave();
     }
-    const stage = await Stage.findOne({ name: ctx.message.text });
+    const stage = await prisma.stage.findFirst({ where: { name: ctx.message.text } });
     if (!stage) return ctx.reply("⚠️ Please select a valid stage.");
 
-    ctx.wizard.state.stageId = stage._id;
+    ctx.wizard.state.stageId = stage.id;
     await ctx.reply(
       `📝 Please send the new Homework text for **${stage.name}**:`,
     );
@@ -1065,8 +1066,9 @@ const editHomeworkWizard = new Scenes.WizardScene(
     }
 
     const newHomework = ctx.message.text;
-    await Stage.findByIdAndUpdate(ctx.wizard.state.stageId, {
-      homeworkText: newHomework,
+    await prisma.stage.update({
+      where: { id: ctx.wizard.state.stageId },
+      data: { homeworkText: newHomework },
     });
 
     await ctx.reply("✅ Homework updated successfully!", mainMenuKeyboard(ctx));
@@ -1093,7 +1095,7 @@ const editScheduleWizard = new Scenes.WizardScene(
     }
 
     // If Owner
-    const stages = await Stage.find();
+    const stages = await prisma.stage.findMany();
     await ctx.reply(
       "🎓 Select the Stage to update the schedule for:",
       Markup.keyboard([...stages.map((s) => [s.name]), ["❌ Cancel"]]).resize(),
@@ -1106,10 +1108,10 @@ const editScheduleWizard = new Scenes.WizardScene(
       await ctx.reply("Cancelled.", mainMenuKeyboard(ctx));
       return ctx.scene.leave();
     }
-    const stage = await Stage.findOne({ name: ctx.message.text });
+    const stage = await prisma.stage.findFirst({ where: { name: ctx.message.text } });
     if (!stage) return ctx.reply("⚠️ Please select a valid stage.");
 
-    ctx.wizard.state.stageId = stage._id;
+    ctx.wizard.state.stageId = stage.id;
     await ctx.reply(
       `📅 Please upload the new Schedule **Image** for **${stage.name}**:`,
     );
@@ -1153,8 +1155,9 @@ const editScheduleWizard = new Scenes.WizardScene(
     }
 
     // 2. SAVE THE SAFE ID TO THE DATABASE
-    const stage = await Stage.findByIdAndUpdate(ctx.wizard.state.stageId, {
-      scheduleImageId: permanentImageId,
+    await prisma.stage.update({
+      where: { id: ctx.wizard.state.stageId },
+      data: { scheduleImageId: permanentImageId },
     });
 
     await ctx.reply(

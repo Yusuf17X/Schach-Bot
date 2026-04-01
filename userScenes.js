@@ -1,19 +1,10 @@
 const { Scenes, Markup } = require("telegraf");
-const {
-  Stage,
-  Class,
-  Lecture,
-  User,
-  Archive,
-  ArchiveFile,
-  Creative,
-  CreativeFile,
-} = require("./models");
+const prisma = require("./models");
 
 const { timeIt, isCancel, mainMenuKeyboard } = require("./utils");
 
 const showClassesMenu = async (ctx, stageId) => {
-  const stage = await Stage.findById(stageId);
+  const stage = await prisma.stage.findUnique({ where: { id: stageId } });
   if (!stage) {
     await ctx.reply("⚠️ المرحلة غير موجودة.", mainMenuKeyboard(ctx));
     return ctx.scene.leave();
@@ -24,7 +15,7 @@ const showClassesMenu = async (ctx, stageId) => {
 
   const classes = await timeIt(
     "DB: Fetch Classes (User)",
-    Class.find({ stageId: stageId }),
+    prisma.class.findMany({ where: { stageId: stageId } }),
   );
 
   const buttons = classes.map((c) => [c.name]);
@@ -49,7 +40,7 @@ const showClassesMenu = async (ctx, stageId) => {
 const chooseStageWizard = new Scenes.WizardScene(
   "CHOOSE_STAGE_SCENE",
   async (ctx) => {
-    const stages = await timeIt("DB: Fetch Stages (User)", Stage.find());
+    const stages = await timeIt("DB: Fetch Stages (User)", prisma.stage.findMany());
 
     if (stages.length === 0) {
       await ctx.reply("⚠️ لا توجد مراحل حالياً.", mainMenuKeyboard(ctx));
@@ -70,12 +61,12 @@ const chooseStageWizard = new Scenes.WizardScene(
       await ctx.reply("🔝 القائمة الرئيسية", mainMenuKeyboard(ctx));
       return ctx.scene.leave();
     }
-    const stage = await Stage.findOne({ name: ctx.message?.text });
+    const stage = await prisma.stage.findFirst({ where: { name: ctx.message?.text } });
     if (!stage) return ctx.reply("⚠️ المرحلة غير موجودة، اختار من الازرار.");
 
     const user = ctx.state.dbUser;
-    user.stageId = stage._id;
-    await user.save();
+    ctx.state.dbUser.stageId = stage.id;
+    await prisma.user.update({ where: { id: user.id }, data: { stageId: stage.id } });
 
     await ctx.reply(`✅ تم اختيار مرحلة ${stage.name}.`);
 
@@ -118,17 +109,16 @@ const browseClassesWizard = new Scenes.WizardScene(
     }
 
     // --- Process Class Selection ---
-    const selectedClass = await Class.findOne({
-      name: text,
-      stageId: stage._id,
+    const selectedClass = await prisma.class.findFirst({
+      where: { name: text, stageId: stage.id },
     });
     if (!selectedClass) return ctx.reply("⚠️ اختار كلمة صحيحة من الازرار.");
 
-    ctx.wizard.state.classId = selectedClass._id;
+    ctx.wizard.state.classId = selectedClass.id;
 
     const lectures = await timeIt(
       "DB: Fetch Lectures (User)",
-      Lecture.find({ classId: selectedClass._id }),
+      prisma.lecture.findMany({ where: { classId: selectedClass.id } }),
     );
 
     const theoryLectures = lectures.filter((l) => l.category !== "lab");
@@ -193,9 +183,8 @@ const browseClassesWizard = new Scenes.WizardScene(
     }
 
     // --- Process Lecture Download ---
-    const lecture = await Lecture.findOne({
-      classId: ctx.wizard.state.classId,
-      title: text,
+    const lecture = await prisma.lecture.findFirst({
+      where: { classId: ctx.wizard.state.classId, title: text },
     });
 
     if (!lecture) return ctx.reply("⚠️ اختار محاضرة من الازرار.");
@@ -224,7 +213,7 @@ const browseClassesWizard = new Scenes.WizardScene(
 const viewArchiveWizard = new Scenes.WizardScene(
   "VIEW_ARCHIVE_SCENE",
   async (ctx) => {
-    const archives = await timeIt("DB: Fetch Archives", Archive.find());
+    const archives = await timeIt("DB: Fetch Archives", prisma.archive.findMany());
     if (archives.length === 0) {
       await ctx.reply("هذا القسم فارغ حاليا....", mainMenuKeyboard(ctx));
       return ctx.scene.leave();
@@ -245,10 +234,10 @@ const viewArchiveWizard = new Scenes.WizardScene(
       return ctx.scene.leave();
     }
 
-    const archive = await Archive.findOne({ name: ctx.message.text });
+    const archive = await prisma.archive.findFirst({ where: { name: ctx.message.text } });
     if (!archive) return ctx.reply("⚠️ اختر أرشيف صحيح من الازرار."); // FIX: Added reply
 
-    const files = await ArchiveFile.find({ archiveId: archive._id });
+    const files = await prisma.archiveFile.findMany({ where: { archiveId: archive.id } });
     if (files.length === 0) {
       await ctx.reply("⚠️ هذا الأرشيف فارغ.", mainMenuKeyboard(ctx));
       return ctx.scene.leave();
@@ -272,7 +261,7 @@ const viewArchiveWizard = new Scenes.WizardScene(
 const viewCreativeWizard = new Scenes.WizardScene(
   "VIEW_CREATIVE_SCENE",
   async (ctx) => {
-    const creatives = await timeIt("DB: Fetch Creatives", Creative.find());
+    const creatives = await timeIt("DB: Fetch Creatives", prisma.creative.findMany());
     if (creatives.length === 0) {
       await ctx.reply("هذا القسم فارغ حاليا....", mainMenuKeyboard(ctx));
       return ctx.scene.leave();
@@ -293,7 +282,7 @@ const viewCreativeWizard = new Scenes.WizardScene(
       return ctx.scene.leave();
     }
 
-    const creative = await Creative.findOne({ name: ctx.message.text });
+    const creative = await prisma.creative.findFirst({ where: { name: ctx.message.text } });
     if (!creative) return ctx.reply("⚠️ اختر زر من الازرار الموجودة.");
 
     try {
@@ -309,7 +298,7 @@ const viewCreativeWizard = new Scenes.WizardScene(
     }
 
     // --- The rest of your file sending code stays exactly the same! ---
-    const files = await CreativeFile.find({ creativeId: creative._id });
+    const files = await prisma.creativeFile.findMany({ where: { creativeId: creative.id } });
     if (files.length > 0) {
       const statusMsg = await ctx.reply(`⏳ إرسال الملفات المرفقة...`);
 
@@ -352,7 +341,7 @@ const suggestWizard = new Scenes.WizardScene(
       return;
     }
 
-    const owners = await User.find({ role: "owner" });
+    const owners = await prisma.user.findMany({ where: { role: "owner" } });
 
     for (const owner of owners) {
       try {

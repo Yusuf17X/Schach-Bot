@@ -1,7 +1,6 @@
 require("dotenv").config();
 const { Telegraf, Scenes, session, Markup } = require("telegraf");
-const mongoose = require("mongoose");
-const { User, BotSettings, Stage } = require("./models");
+const prisma = require("./models");
 const { mainMenuKeyboard, adminPanelKeyboard, timeIt } = require("./utils");
 
 const {
@@ -39,9 +38,9 @@ process.on("uncaughtException", (err) => {
   process.exit(1);
 });
 
-mongoose
-  .connect(process.env.DB.replace("<DB_PASSWORD>", process.env.DB_PASSWORD))
-  .then(() => console.log("MongoDB connected!"));
+prisma
+  .$connect()
+  .then(() => console.log("PostgreSQL connected!"));
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
@@ -77,21 +76,23 @@ bot.use(async (ctx, next) => {
   // saving users who interact directly with the bot
   if (!ctx.from) return next();
 
-  let user = await User.findOne({ chatId: ctx.from.id });
+  let user = await prisma.user.findFirst({ where: { chatId: ctx.from.id } });
 
   const telegramId = ctx.from.id.toString();
   const ownerId = process.env.ADMIN_ID;
 
   if (!user) {
-    user = await User.create({
-      chatId: ctx.from.id,
-      name: ctx.from.first_name,
-      username: ctx.from.username,
-      role: telegramId === ownerId ? "owner" : "user",
+    user = await prisma.user.create({
+      data: {
+        chatId: ctx.from.id,
+        name: ctx.from.first_name,
+        username: ctx.from.username,
+        role: telegramId === ownerId ? "owner" : "user",
+      },
     });
 
-    const usersCount = await User.countDocuments();
-    const owners = await User.find({ role: "owner" });
+    const usersCount = await prisma.user.count();
+    const owners = await prisma.user.findMany({ where: { role: "owner" } });
 
     owners.forEach((owner) => {
       if (owner.chatId !== user.chatId) {
@@ -157,12 +158,12 @@ bot.telegram.setMyCommands(
 bot.start(async (ctx) => {
   let settings = await timeIt(
     "Fetch Bot Settings: Welcome Message",
-    BotSettings.findOne({ singletonId: "default" }),
+    prisma.botSettings.findFirst({ where: { singletonId: "default" } }),
   );
 
   if (!settings) {
     // Ensure default values are populated if missing
-    settings = await BotSettings.create({ singletonId: "default" });
+    settings = await prisma.botSettings.create({ data: { singletonId: "default" } });
   }
 
   const welcomeText =
@@ -214,12 +215,14 @@ bot.command("link", async (ctx) => {
   try {
     let stageId = user.managedStageId;
 
-    const stage = await Stage.findById(stageId);
+    const stage = await prisma.stage.findUnique({ where: { id: stageId } });
     if (!stage)
       throw new Error("المرحلة المحددة غير موجودة في قاعدة البيانات.");
 
-    stage.telegramGroupId = ctx.chat.id.toString();
-    await stage.save();
+    await prisma.stage.update({
+      where: { id: stage.id },
+      data: { telegramGroupId: ctx.chat.id.toString() },
+    });
 
     return ctx.reply(`تم. البوت انربط ب ${stage.name} ✅`);
   } catch (error) {
@@ -370,8 +373,8 @@ bot.action("action_homework", async (ctx) => {
     if (!isGroup) return;
 
     // 3. Find the Stage linked to this specific group
-    const stage = await Stage.findOne({
-      telegramGroupId: ctx.chat.id.toString(),
+    const stage = await prisma.stage.findFirst({
+      where: { telegramGroupId: ctx.chat.id.toString() },
     });
 
     if (!stage) {
@@ -433,7 +436,7 @@ bot.launch();
 process.once("SIGINT", async () => {
   console.log("🛑 SIGINT received. Shutting down...");
   bot.stop("SIGINT");
-  await mongoose.connection.close();
+  await prisma.$disconnect();
   process.exit(0);
 });
 
@@ -441,7 +444,7 @@ process.once("SIGINT", async () => {
 process.once("SIGTERM", async () => {
   console.log("🛑 SIGTERM received. Shutting down...");
   bot.stop("SIGTERM");
-  await mongoose.connection.close();
+  await prisma.$disconnect();
   process.exit(0);
 });
 
@@ -453,11 +456,8 @@ process.on("unhandledRejection", async (err) => {
   try {
     bot.stop("Unhandled Rejection");
 
-    // Safely close the MongoDB connection
-    if (mongoose.connection.readyState === 1) {
-      await mongoose.connection.close();
-      console.log("MongoDB connection closed.");
-    }
+    await prisma.$disconnect();
+    console.log("PostgreSQL connection closed.");
   } catch (shutdownErr) {
     console.error("Error during shutdown:", shutdownErr);
   } finally {

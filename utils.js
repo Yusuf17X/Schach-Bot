@@ -69,7 +69,7 @@ const adminPanelKeyboard = (ctx) => {
 const notificationQueue = {};
 
 const queueGroupNotification = (ctx, stage, update) => {
-  const stageId = stage._id.toString();
+  const stageId = stage.id.toString();
 
   if (!notificationQueue[stageId]) {
     notificationQueue[stageId] = { updates: [], timeout: null };

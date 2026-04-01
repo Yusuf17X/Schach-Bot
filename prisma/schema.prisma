@@ -1,0 +1,92 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Stage {
+  id              Int       @id @default(autoincrement())
+  name            String    @unique
+  adminId         Int?
+  telegramGroupId String?
+  homeworkText    String?
+  scheduleImageId String?
+  classes         Class[]
+  users           User[]   @relation("UserStage")
+  managedByUsers  User[]   @relation("UserManagedStage")
+}
+
+model Class {
+  id       Int       @id @default(autoincrement())
+  name     String
+  stageId  Int
+  stage    Stage     @relation(fields: [stageId], references: [id])
+  lectures Lecture[]
+
+  @@unique([name, stageId])
+}
+
+model Lecture {
+  id           Int    @id @default(autoincrement())
+  title        String
+  classId      Int
+  class        Class  @relation(fields: [classId], references: [id])
+  fileId       String
+  fileType     String
+  channelMsgId Int
+  category     String @default("theory")
+}
+
+model User {
+  id             Int     @id @default(autoincrement())
+  chatId         Int     @unique
+  name           String?
+  username       String?
+  stageId        Int?
+  stage          Stage?  @relation("UserStage", fields: [stageId], references: [id])
+  role           String  @default("user")
+  managedStageId Int?
+  managedStage   Stage?  @relation("UserManagedStage", fields: [managedStageId], references: [id])
+}
+
+model Archive {
+  id    Int           @id @default(autoincrement())
+  name  String        @unique
+  files ArchiveFile[]
+}
+
+model ArchiveFile {
+  id           Int     @id @default(autoincrement())
+  archiveId    Int
+  archive      Archive @relation(fields: [archiveId], references: [id])
+  fileId       String
+  title        String
+  channelMsgId Int
+}
+
+model Creative {
+  id           Int            @id @default(autoincrement())
+  name         String         @unique
+  text         String
+  channelMsgId Int
+  files        CreativeFile[]
+}
+
+model CreativeFile {
+  id           Int      @id @default(autoincrement())
+  creativeId   Int
+  creative     Creative @relation(fields: [creativeId], references: [id])
+  fileId       String
+  title        String
+  channelMsgId Int
+}
+
+model BotSettings {
+  id             Int    @id @default(autoincrement())
+  singletonId    String @unique @default("default")
+  welcomeMessage String @default("👋 Welcome to Al-Msar Bot!\n\nPlease choose an option below.")
+  aboutMessage   String @default("This bot was created to help students access their materials.")
+}
