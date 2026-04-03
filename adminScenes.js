@@ -436,6 +436,8 @@ const delClassWizard = new Scenes.WizardScene(
 
 const delLectureWizard = new Scenes.WizardScene(
   "DEL_LECTURE_SCENE",
+
+  // STEP 1
   async (ctx) => {
     const stages = await timeIt("DB: Fetch Stages", Stage.find());
     ctx.reply(
@@ -444,11 +446,21 @@ const delLectureWizard = new Scenes.WizardScene(
     );
     return ctx.wizard.next();
   },
+
+  // STEP 2
   async (ctx) => {
     if (isCancel(ctx.message?.text))
       return ctx.scene.leave(ctx.reply("Cancelled.", adminPanelKeyboard(ctx)));
+
     const stage = await Stage.findOne({ name: ctx.message.text });
-    if (!stage) return;
+    if (!stage) {
+      // Don't just return; tell the user they messed up so the bot doesn't freeze
+      ctx.reply("⚠️ Stage not found. Please select from the keyboard.");
+      return;
+    }
+
+    // 🎒 Save the stage ID into the wizard state
+    ctx.wizard.state.stageId = stage._id;
 
     const classes = await timeIt(
       "DB: Fetch Classes",
@@ -463,20 +475,35 @@ const delLectureWizard = new Scenes.WizardScene(
     );
     return ctx.wizard.next();
   },
+
+  // STEP 3
   async (ctx) => {
     if (isCancel(ctx.message?.text))
       return ctx.scene.leave(ctx.reply("Cancelled.", adminPanelKeyboard(ctx)));
-    const selectedClass = await Class.findOne({ name: ctx.message.text });
-    if (!selectedClass) return;
+
+    // Use the saved stageId to ensure we get the right class!
+    const selectedClass = await Class.findOne({
+      name: ctx.message.text,
+      stageId: ctx.wizard.state.stageId,
+    });
+
+    if (!selectedClass) {
+      ctx.reply("⚠️ Class not found. Please select from the keyboard.");
+      return;
+    }
+
+    // 🎒 Save the class ID into the wizard state for the next step!
+    ctx.wizard.state.classId = selectedClass._id;
 
     const lectures = await timeIt(
       "DB: Fetch Lectures",
       Lecture.find({ classId: selectedClass._id }),
     );
-    if (lectures.length === 0)
-      return ctx.scene.leave(
-        ctx.reply("No lectures here.", adminPanelKeyboard(ctx)),
-      );
+
+    if (lectures.length === 0) {
+      ctx.reply("No lectures here.", adminPanelKeyboard(ctx));
+      return ctx.scene.leave();
+    }
 
     ctx.reply(
       "❌ Select the Lecture to delete:",
@@ -487,11 +514,22 @@ const delLectureWizard = new Scenes.WizardScene(
     );
     return ctx.wizard.next();
   },
+
+  // STEP 4
   async (ctx) => {
     if (isCancel(ctx.message?.text))
       return ctx.scene.leave(ctx.reply("Cancelled.", adminPanelKeyboard(ctx)));
-    const lecture = await Lecture.findOne({ title: ctx.message.text });
-    if (!lecture) return;
+
+    // ✨ FIX: Search by BOTH title AND the classId we saved in the backpack
+    const lecture = await Lecture.findOne({
+      title: ctx.message.text,
+      classId: ctx.wizard.state.classId,
+    });
+
+    if (!lecture) {
+      ctx.reply("⚠️ Lecture not found. Please select from the keyboard.");
+      return;
+    }
 
     try {
       await ctx.telegram.deleteMessage(
@@ -499,8 +537,13 @@ const delLectureWizard = new Scenes.WizardScene(
         lecture.channelMsgId,
       );
     } catch (e) {
-      console.log(`Failed to delete msg ${lecture.channelMsgId} from channel.`);
+      // It's helpful to log the actual error message here to see why Telegram rejected it
+      console.log(
+        `Failed to delete msg ${lecture.channelMsgId} from channel. Reason:`,
+        e.message,
+      );
     }
+
     await Lecture.findByIdAndDelete(lecture._id);
 
     ctx.reply(`✅ Lecture deleted.`, adminPanelKeyboard(ctx));
