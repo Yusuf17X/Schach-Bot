@@ -684,12 +684,11 @@ const addArchiveWizard = new Scenes.WizardScene(
     ctx.reply("⚠️ Please send a file or click '✅ Done'.");
   },
 );
-
 // --- ADD CREATIVE WIZARD ---
 const addCreativeWizard = new Scenes.WizardScene(
   "ADD_CREATIVE_SCENE",
 
-  // STEP 1
+  // STEP 1: Ask for Title
   (ctx) => {
     ctx.reply(
       "🎨 Type the title of the Creative topic (e.g., 'Good Presentation'):",
@@ -698,10 +697,16 @@ const addCreativeWizard = new Scenes.WizardScene(
     return ctx.wizard.next();
   },
 
-  // STEP 2
+  // STEP 2: Receive Title, ask for Main Content
   (ctx) => {
     if (isCancel(ctx.message?.text))
       return ctx.scene.leave(ctx.reply("Cancelled.", adminPanelKeyboard(ctx)));
+
+    // Safety Guard: Make sure they actually typed text for the title!
+    if (!ctx.message?.text) {
+      ctx.reply("⚠️ Please send text for the title.");
+      return;
+    }
 
     ctx.wizard.state.creativeName = ctx.message.text;
 
@@ -711,13 +716,13 @@ const addCreativeWizard = new Scenes.WizardScene(
     return ctx.wizard.next();
   },
 
-  // STEP 3
+  // STEP 3: Receive Main Content, ask for Additional Files
   async (ctx) => {
     if (isCancel(ctx.message?.text))
       return ctx.scene.leave(ctx.reply("Cancelled.", adminPanelKeyboard(ctx)));
 
     try {
-      // 1. Copy whatever they sent (text, photo, file, etc.) directly to the channel
+      // 1. Copy the main content to the channel
       const channelMsg = await ctx.telegram.copyMessage(
         process.env.CHANNEL_ID,
         ctx.chat.id,
@@ -726,13 +731,14 @@ const addCreativeWizard = new Scenes.WizardScene(
 
       // 2. Intelligently grab the text OR the file caption
       const contentText =
-        ctx.message?.text || ctx.message?.caption || "بدون وصف"; // "No description" fallback
+        ctx.message?.text || ctx.message?.caption || "بدون وصف";
 
+      // 3. Save to Database
       const creative = await timeIt(
         "DB: Create Creative",
         Creative.create({
           name: ctx.wizard.state.creativeName,
-          text: contentText, // Save the dynamically grabbed text
+          text: contentText,
           channelMsgId: channelMsg.message_id,
         }),
       );
@@ -747,25 +753,35 @@ const addCreativeWizard = new Scenes.WizardScene(
       return ctx.wizard.next();
     } catch (e) {
       console.error("Creative Save Error", e);
-      return ctx.reply("❌ Error saving content. Try again or Cancel.");
+      // Fixed: Actually leave the scene on error so the admin isn't stuck forever
+      ctx.reply(
+        "❌ Error saving content. Please try again.",
+        adminPanelKeyboard(ctx),
+      );
+      return ctx.scene.leave();
     }
   },
 
-  // STEP 4 (Additional Files Queue)
+  // STEP 4: Handle Additional Files (The queue)
   async (ctx) => {
     const text = ctx.message?.text;
     if (isCancel(text))
       return ctx.scene.leave(ctx.reply("Cancelled.", adminPanelKeyboard(ctx)));
 
+    // If they send a file, add it to the memory queue
     if (ctx.message?.document || ctx.message?.photo || ctx.message?.video) {
       ctx.wizard.state.files.push(ctx.message);
-      ctx.reply(`📥 Added to creative queue.`);
+      // Added a counter so you know it's working
+      ctx.reply(
+        `📥 Added to queue (Total: ${ctx.wizard.state.files.length} files)`,
+      );
       return;
     }
 
+    // If they click Done, process the entire queue
     if (text === "✅ Done") {
       ctx.reply(
-        `⏳ Saving ${ctx.wizard.state.files.length} creative files...`,
+        `⏳ Saving ${ctx.wizard.state.files.length} creative files to channel...`,
         Markup.removeKeyboard(),
       );
 
@@ -787,10 +803,13 @@ const addCreativeWizard = new Scenes.WizardScene(
         }
 
         try {
-          const channelMsg = await ctx.telegram.sendCopy(
+          // ✨ THE FATAL FIX: Using copyMessage instead of the non-existent sendCopy
+          const channelMsg = await ctx.telegram.copyMessage(
             process.env.CHANNEL_ID,
-            msg,
+            ctx.chat.id,
+            msg.message_id,
           );
+
           await CreativeFile.create({
             creativeId: ctx.wizard.state.creativeId,
             fileId: fileId,
