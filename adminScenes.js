@@ -688,6 +688,8 @@ const addArchiveWizard = new Scenes.WizardScene(
 // --- ADD CREATIVE WIZARD ---
 const addCreativeWizard = new Scenes.WizardScene(
   "ADD_CREATIVE_SCENE",
+
+  // STEP 1
   (ctx) => {
     ctx.reply(
       "🎨 Type the title of the Creative topic (e.g., 'Good Presentation'):",
@@ -695,30 +697,42 @@ const addCreativeWizard = new Scenes.WizardScene(
     );
     return ctx.wizard.next();
   },
+
+  // STEP 2
   (ctx) => {
     if (isCancel(ctx.message?.text))
       return ctx.scene.leave(ctx.reply("Cancelled.", adminPanelKeyboard(ctx)));
+
     ctx.wizard.state.creativeName = ctx.message.text;
 
-    ctx.reply("✍️ Now, send the text message/description for this topic:");
+    ctx.reply(
+      "✍️ Now, send the main description (You can send a text message, OR a photo/file with a caption):",
+    );
     return ctx.wizard.next();
   },
+
+  // STEP 3
   async (ctx) => {
     if (isCancel(ctx.message?.text))
       return ctx.scene.leave(ctx.reply("Cancelled.", adminPanelKeyboard(ctx)));
 
     try {
+      // 1. Copy whatever they sent (text, photo, file, etc.) directly to the channel
       const channelMsg = await ctx.telegram.copyMessage(
         process.env.CHANNEL_ID,
         ctx.chat.id,
         ctx.message.message_id,
       );
 
+      // 2. Intelligently grab the text OR the file caption
+      const contentText =
+        ctx.message?.text || ctx.message?.caption || "بدون وصف"; // "No description" fallback
+
       const creative = await timeIt(
         "DB: Create Creative",
         Creative.create({
           name: ctx.wizard.state.creativeName,
-          text: ctx.message.text,
+          text: contentText, // Save the dynamically grabbed text
           channelMsgId: channelMsg.message_id,
         }),
       );
@@ -727,15 +741,17 @@ const addCreativeWizard = new Scenes.WizardScene(
       ctx.wizard.state.files = [];
 
       ctx.reply(
-        "✅ Text saved.\n\n📎 Now send any attached files/images for this topic, then click '✅ Done'.",
+        "✅ Main content saved.\n\n📎 Now send any ADDITIONAL attached files/images for this topic, then click '✅ Done'.",
         Markup.keyboard([["✅ Done"], ["❌ Cancel"]]).resize(),
       );
       return ctx.wizard.next();
     } catch (e) {
       console.error("Creative Save Error", e);
-      return ctx.reply("❌ Error saving text. Try again or Cancel.");
+      return ctx.reply("❌ Error saving content. Try again or Cancel.");
     }
   },
+
+  // STEP 4 (Additional Files Queue)
   async (ctx) => {
     const text = ctx.message?.text;
     if (isCancel(text))
@@ -752,6 +768,7 @@ const addCreativeWizard = new Scenes.WizardScene(
         `⏳ Saving ${ctx.wizard.state.files.length} creative files...`,
         Markup.removeKeyboard(),
       );
+
       const sortedFiles = ctx.wizard.state.files.sort(
         (a, b) => a.message_id - b.message_id,
       );
@@ -780,11 +797,14 @@ const addCreativeWizard = new Scenes.WizardScene(
             title: title,
             channelMsgId: channelMsg.message_id,
           });
-        } catch (error) {}
+        } catch (error) {
+          console.error("Error saving individual file to channel/DB:", error);
+        }
       }
       ctx.reply("✅ Creative topic fully saved.", adminPanelKeyboard(ctx));
       return ctx.scene.leave();
     }
+
     ctx.reply("⚠️ Please send a file or click '✅ Done'.");
   },
 );
