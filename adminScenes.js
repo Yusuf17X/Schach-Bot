@@ -1005,7 +1005,7 @@ const broadcastGroupWizard = new Scenes.WizardScene(
 
       ctx.wizard.state.targetGroupId = stage.telegramGroupId;
       ctx.reply(
-        `📢 **Broadcast to ${stage.name}**\n\nType the announcement message you want to send to the group:`,
+        `📢 **Broadcast to ${stage.name}**\n\nSend the announcement you want to post to the group (text, voice, or media):`,
         Markup.keyboard([["❌ Cancel"]]).resize(),
       );
 
@@ -1041,7 +1041,7 @@ const broadcastGroupWizard = new Scenes.WizardScene(
 
     ctx.wizard.state.targetGroupId = stage.telegramGroupId;
     ctx.reply(
-      "Type the announcement message you want to send to the group:",
+      "Send the announcement you want to post to the group (text, voice, or media):",
       Markup.keyboard([["❌ Cancel"]]).resize(),
     );
     return ctx.wizard.next();
@@ -1050,12 +1050,18 @@ const broadcastGroupWizard = new Scenes.WizardScene(
     if (isCancel(ctx.message?.text))
       return ctx.scene.leave(ctx.reply("Cancelled.", adminPanelKeyboard(ctx)));
 
-    const announcementText = ctx.message.text;
+    if (!ctx.message) {
+      return ctx.reply(
+        "⚠️ Please send a valid message to broadcast.",
+        Markup.keyboard([["❌ Cancel"]]).resize(),
+      );
+    }
 
     try {
-      await ctx.telegram.sendMessage(
+      await ctx.telegram.copyMessage(
         ctx.wizard.state.targetGroupId,
-        `${announcementText}`,
+        ctx.chat.id,
+        ctx.message.message_id,
       );
       ctx.reply("✅ Announcement sent successfully!", adminPanelKeyboard(ctx));
     } catch (error) {
