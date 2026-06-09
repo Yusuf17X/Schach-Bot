@@ -19,7 +19,7 @@ const showClassesMenu = async (ctx, stageId) => {
     return ctx.scene.leave();
   }
 
-  // Save stage to wizard state so the next step can use it for Homework/Schedule
+  // Store stage so next step can handle Homework/Schedule buttons
   ctx.wizard.state.stage = stage;
 
   const classes = await timeIt(
@@ -29,7 +29,7 @@ const showClassesMenu = async (ctx, stageId) => {
 
   const buttons = classes.map((c) => [c.name]);
 
-  // --- Inject Homework/Schedule if they exist ---
+  // Inject Homework/Schedule buttons if they exist
   const updatesRow = [];
   if (stage.scheduleImageId) updatesRow.push("📅 الجدول");
   if (stage.homeworkText) updatesRow.push("📝 الواجبات");
@@ -45,7 +45,6 @@ const showClassesMenu = async (ctx, stageId) => {
   return ctx.wizard.next();
 };
 
-// --- CHOOSE STAGE SCENE ---
 const chooseStageWizard = new Scenes.WizardScene(
   "CHOOSE_STAGE_SCENE",
   async (ctx) => {
@@ -83,10 +82,8 @@ const chooseStageWizard = new Scenes.WizardScene(
   },
 );
 
-// --- BROWSE CLASSES SCENE ---
 const browseClassesWizard = new Scenes.WizardScene(
   "BROWSE_CLASSES_SCENE",
-  // STEP 1 (Index 0): Check if user has a stage
   async (ctx) => {
     const user = ctx.state.dbUser;
 
@@ -94,10 +91,8 @@ const browseClassesWizard = new Scenes.WizardScene(
       return ctx.scene.enter("CHOOSE_STAGE_SCENE");
     }
 
-    // USER ALREADY HAS STAGE: Show classes instantly
     return await showClassesMenu(ctx, user.stageId);
   },
-  // STEP 2 (Index 1): Handle Class Click OR Homework/Schedule Clicks
   async (ctx) => {
     const text = ctx.message?.text;
     if (isCancel(text)) {
@@ -105,9 +100,9 @@ const browseClassesWizard = new Scenes.WizardScene(
       return ctx.scene.leave();
     }
 
-    const stage = ctx.wizard.state.stage;
+    const { stage } = ctx.wizard.state;
 
-    // --- Intercept Homework/Schedule Clicks (Stay in Step 2) ---
+    // Handle Homework/Schedule buttons without advancing the wizard step
     if (text === "📝 الواجبات" && stage.homeworkText) {
       await ctx.reply(`📝 الواجبات:\n\n${stage.homeworkText}`);
       return;
@@ -151,7 +146,6 @@ const browseClassesWizard = new Scenes.WizardScene(
     );
     return ctx.wizard.next();
   },
-  // STEP 3 (Index 2): Handle Lecture Download OR Lab Folder Navigation
   async (ctx) => {
     const text = ctx.message?.text;
     if (isCancel(text)) {
@@ -163,7 +157,7 @@ const browseClassesWizard = new Scenes.WizardScene(
       return ctx.scene.enter("BROWSE_CLASSES_SCENE");
     }
 
-    // --- Intercept "Back to Lectures" ---
+    // Re-show the lectures keyboard when coming back from Lab folder
     if (text === "🔙 العودة الى المحاضرات") {
       const theoryButtons = ctx.wizard.state.theoryLectures.map((l) => [
         l.title,
@@ -177,7 +171,7 @@ const browseClassesWizard = new Scenes.WizardScene(
       return;
     }
 
-    // --- Intercept Lab Folder Click ---
+    // Show Lab lectures folder
     if (
       text === "🔬 Lab Lectures" &&
       ctx.wizard.state.labLectures?.length > 0
@@ -192,7 +186,7 @@ const browseClassesWizard = new Scenes.WizardScene(
       return;
     }
 
-    // --- Process Lecture Download ---
+    // Find and send the selected lecture
     const lecture = await Lecture.findOne({
       classId: ctx.wizard.state.classId,
       title: text,
@@ -216,11 +210,12 @@ const browseClassesWizard = new Scenes.WizardScene(
 
     try {
       await ctx.telegram.deleteMessage(ctx.chat.id, statusMsg.message_id);
-    } catch (e) {}
+    } catch {
+      // Ignore failure to delete status message
+    }
   },
 );
 
-// --- VIEW ARCHIVE SCENE ---
 const viewArchiveWizard = new Scenes.WizardScene(
   "VIEW_ARCHIVE_SCENE",
   async (ctx) => {
@@ -246,7 +241,7 @@ const viewArchiveWizard = new Scenes.WizardScene(
     }
 
     const archive = await Archive.findOne({ name: ctx.message.text });
-    if (!archive) return ctx.reply("⚠️ اختر أرشيف صحيح من الازرار."); // FIX: Added reply
+    if (!archive) return ctx.reply("⚠️ اختر أرشيف صحيح من الازرار.");
 
     const files = await ArchiveFile.find({ archiveId: archive._id });
     if (files.length === 0) {
@@ -258,17 +253,16 @@ const viewArchiveWizard = new Scenes.WizardScene(
     for (const file of files) {
       try {
         await ctx.telegram.sendDocument(ctx.chat.id, file.fileId);
-      } catch (e) {
+      } catch {
         await ctx.telegram.sendPhoto(ctx.chat.id, file.fileId).catch(() => {});
       }
     }
 
     await ctx.reply("✅ تم إرسال جميع الملفات.", mainMenuKeyboard(ctx));
-    return ctx.scene.leave(); // FIX: Exit scene so user doesn't get trapped
+    return ctx.scene.leave();
   },
 );
 
-// --- VIEW CREATIVE SCENE ---
 const viewCreativeWizard = new Scenes.WizardScene(
   "VIEW_CREATIVE_SCENE",
   async (ctx) => {
@@ -298,17 +292,16 @@ const viewCreativeWizard = new Scenes.WizardScene(
 
     try {
       await ctx.telegram.copyMessage(
-        ctx.chat.id, // 1. Where it's going (The Student)
-        process.env.CHANNEL_ID, // 2. Where it is right now (Your Storage Group ID)
-        creative.channelMsgId, // 3. The ID of the message saved in your database
+        ctx.chat.id,
+        process.env.CHANNEL_ID,
+        creative.channelMsgId,
       );
     } catch (error) {
       console.error("Failed to copy message:", error);
-      // Fallback just in case the message was deleted from the storage group
+      // Fall back to plain text if the channel message was deleted
       await ctx.reply(`🎨 ${creative.name}\n\n${creative.text}`);
     }
 
-    // --- The rest of your file sending code stays exactly the same! ---
     const files = await CreativeFile.find({ creativeId: creative._id });
     if (files.length > 0) {
       const statusMsg = await ctx.reply(`⏳ إرسال الملفات المرفقة...`);
@@ -316,7 +309,7 @@ const viewCreativeWizard = new Scenes.WizardScene(
       for (const file of files) {
         try {
           await ctx.telegram.sendDocument(ctx.chat.id, file.fileId);
-        } catch (e) {
+        } catch {
           await ctx.telegram
             .sendPhoto(ctx.chat.id, file.fileId)
             .catch(() => {});
@@ -325,7 +318,9 @@ const viewCreativeWizard = new Scenes.WizardScene(
 
       try {
         await ctx.telegram.deleteMessage(ctx.chat.id, statusMsg.message_id);
-      } catch (e) {}
+      } catch {
+        // Ignore failure to delete status message
+      }
     }
   },
 );
@@ -345,7 +340,6 @@ const suggestWizard = new Scenes.WizardScene(
       return ctx.scene.leave();
     }
 
-    // 1. Check if the message is actually text
     const suggestion = ctx.message?.text;
     if (!suggestion) {
       await ctx.reply("⚠️ اكتب اقتراحك ك نص بس.", mainMenuKeyboard(ctx));

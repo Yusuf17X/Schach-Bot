@@ -31,7 +31,7 @@ const {
   suggestWizard,
 } = require("./userScenes");
 
-// For sync errors like using undefined variable
+// Crash on unrecoverable sync errors
 process.on("uncaughtException", (err) => {
   console.error("🚨 UNCAUGHT EXCEPTION! 💥 Shutting down...");
   console.error(err.name, err.message, err.stack);
@@ -134,9 +134,8 @@ const stage = new Scenes.Stage([
 ]);
 bot.use(stage.middleware());
 
-// --- ROUTERS ---
-
-// 1. Remove all '/' command suggestions for EVERYONE in groups
+// Route definitions
+// Hide slash commands in groups
 bot.telegram.setMyCommands([], {
   scope: { type: "all_group_chats" },
 });
@@ -161,7 +160,6 @@ bot.start(async (ctx) => {
   );
 
   if (!settings) {
-    // Ensure default values are populated if missing
     settings = await BotSettings.create({ singletonId: "default" });
   }
 
@@ -360,16 +358,13 @@ bot.hears(/سجاج|سچاچ|@BITSchachBot/, async (ctx) => {
 
 bot.action("action_homework", async (ctx) => {
   try {
-    // 1. ALWAYS answer the callback query first
-    // This stops the little clock/loading spinner on the button from spinning forever
     await ctx.answerCbQuery();
 
-    // 2. Guard check
     const isGroup =
       ctx.chat?.type === "group" || ctx.chat?.type === "supergroup";
     if (!isGroup) return;
 
-    // 3. Find the Stage linked to this specific group
+    // Look up the Stage linked to this group
     const stage = await Stage.findOne({
       telegramGroupId: ctx.chat.id.toString(),
     });
@@ -380,16 +375,13 @@ bot.action("action_homework", async (ctx) => {
       );
     }
 
-    // 4. Fetch the homework text
     const homeworkText =
       stage.homeworkText || "لا توجد واجبات مضافة حالياً لهذي المرحلة 🥳.";
 
-    // 5. Send the homework into the chat
     await ctx.reply(`📚 واجبات ${stage.name}:\n\n${homeworkText}`);
   } catch (error) {
     console.error("Error in action_homework:", error);
 
-    // If something crashes, show a nice pop-up alert to the user who clicked it
     await ctx
       .answerCbQuery("❌ صار خطأ بجلب الواجبات.. جرب مرة ثانية.", {
         show_alert: true,
@@ -399,27 +391,22 @@ bot.action("action_homework", async (ctx) => {
 });
 
 bot.catch(async (err, ctx) => {
-  // 1. Log the error
   console.error(
     `🚨 Global Error for user ${ctx.from?.id} during ${ctx.updateType}:`,
     err,
   );
 
-  // 2. Try to inform the user
   try {
-    // If the user was stuck inside a wizard when the error happened kick them out
-    // so they dont get permanently stuck in a broken state
+    // Leave the wizard if active so the user isn't permanently stuck
     if (ctx.scene) {
       await ctx.scene.leave();
     }
 
-    // Send the error message
     await ctx.reply(
       "صار غلط بالبوت.. جرب مره ثانية او اكتب /start .\n\nاذا استمرت المشكلة راسل مطور البوت 😇.",
     );
   } catch (replyError) {
-    // if the user blocked the bot immediately after sending a message
-    // or if Telegram's servers are down.
+    // Fires if the user blocked the bot or Telegram is down
     console.error(
       "❌ Failed to send error message to user.",
       replyError.message,
@@ -445,7 +432,7 @@ process.once("SIGTERM", async () => {
   process.exit(0);
 });
 
-//For async errors like failed auth to the db
+// Crash on unhandled async errors (e.g. DB auth failure)
 process.on("unhandledRejection", async (err) => {
   console.log(`Unhandled Rejection! 💥 Shutting down...`);
   console.log(err.name, err.message, err);
@@ -453,7 +440,6 @@ process.on("unhandledRejection", async (err) => {
   try {
     bot.stop("Unhandled Rejection");
 
-    // Safely close the MongoDB connection
     if (mongoose.connection.readyState === 1) {
       await mongoose.connection.close();
       console.log("MongoDB connection closed.");

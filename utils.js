@@ -18,17 +18,14 @@ const isCancel = (text) =>
   text === "🔝 القائمة الرئيسية" ||
   text?.startsWith("/");
 
-// Inside utils.js
 const mainMenuKeyboard = (ctx) => {
   const buttons = [
     ["🔄 تغيير المرحلة", "📚 المحاضرات"],
     ["📦 الارشيف", "🎨 الادوات المساعدة"],
   ];
 
-  // Grab the role from ctx.state.dbUser
   const role = ctx.state.dbUser?.role;
 
-  // If they are admin or owner, show the button
   if (role === "admin" || role === "owner") {
     buttons.push(["⚙️ Admin"]);
   }
@@ -75,7 +72,6 @@ const queueGroupNotification = (ctx, stage, update) => {
     notificationQueue[stageId] = { updates: [], timeout: null };
   }
 
-  // update now contains { className, fileNames, category }
   notificationQueue[stageId].updates.push(update);
 
   if (!notificationQueue[stageId].timeout) {
@@ -89,18 +85,16 @@ const sendBatchNotification = async (ctx, stageId, groupId) => {
   const queue = notificationQueue[stageId];
   if (!queue || queue.updates.length === 0) return;
 
-  // Aggregate file names by Class and Category
+  // Group file names by class and category
   const summary = queue.updates.reduce((acc, curr) => {
     if (!acc[curr.className]) acc[curr.className] = { theory: [], lab: [] };
 
-    // Push all filenames from this batch into the correct category array
     acc[curr.className][curr.category].push(...curr.fileNames);
     return acc;
   }, {});
 
   let message = "";
 
-  // Use .forEach() to build the list
   Object.entries(summary).forEach(([className, categories]) => {
     message += `📚 ${className}: `;
 
