@@ -29,7 +29,7 @@ const addStageWizard = new Scenes.WizardScene(
   },
   async (ctx) => {
     if (isCancel(ctx.message?.text))
-      return ctx.scene.leave(ctx.reply("Cancelled.", adminPanelKeyboard(ctx))); // FIX: Executed the function
+      return ctx.scene.leave(ctx.reply("Cancelled.", adminPanelKeyboard(ctx)));
 
     await timeIt("DB: Create Stage", Stage.create({ name: ctx.message.text }));
     ctx.reply(
@@ -82,7 +82,7 @@ const addClassWizard = new Scenes.WizardScene(
 
 const addLectureWizard = new Scenes.WizardScene(
   "ADD_LECTURE_SCENE",
-  // Step 0: The Routing Step
+  // Step 0: Route admin to their stage directly, owner picks from list
   async (ctx) => {
     const user = ctx.state.dbUser;
 
@@ -121,7 +121,7 @@ const addLectureWizard = new Scenes.WizardScene(
       return ctx.wizard.next();
     }
   },
-  // Step 1: Owner Only - Process Stage Selection
+  // Step 1: Owner picks a stage
   async (ctx) => {
     if (isCancel(ctx.message?.text))
       return ctx.scene.leave(ctx.reply("Cancelled.", adminPanelKeyboard(ctx)));
@@ -141,7 +141,7 @@ const addLectureWizard = new Scenes.WizardScene(
     );
     return ctx.wizard.next();
   },
-  // Step 2: Both Admin and Owner end up here to select the Class
+  // Step 2: Select the class (both admin and owner end up here)
   async (ctx) => {
     if (isCancel(ctx.message?.text))
       return ctx.scene.leave(ctx.reply("Cancelled.", adminPanelKeyboard(ctx)));
@@ -156,14 +156,13 @@ const addLectureWizard = new Scenes.WizardScene(
 
     ctx.wizard.state.classId = selectedClass._id;
 
-    // Ask for the Category instead of immediately asking for files!
     ctx.reply(
       "Is this a Theory or Lab lecture?",
       Markup.keyboard([["Theory", "Lab"], ["❌ Cancel"]]).resize(),
     );
     return ctx.wizard.next();
   },
-  //Step 3: Handle Category Selection & Initialize File Queue
+  // Step 3: Save category and initialize the file queue
   async (ctx) => {
     const text = ctx.message?.text;
     if (isCancel(text))
@@ -173,7 +172,6 @@ const addLectureWizard = new Scenes.WizardScene(
       return ctx.reply("⚠️ Please select 'Theory' or 'Lab' from the keyboard.");
     }
 
-    // Save the category (make it lowercase to match your browseClasses logic)
     ctx.wizard.state.category = text.toLowerCase();
     ctx.wizard.state.files = [];
 
@@ -183,13 +181,12 @@ const addLectureWizard = new Scenes.WizardScene(
     );
     return ctx.wizard.next();
   },
-  // Step 4: Handle File Queue Collection
+  // Step 4: Collect files into the queue
   async (ctx) => {
     const text = ctx.message?.text;
     if (isCancel(text))
       return ctx.scene.leave(ctx.reply("Cancelled.", adminPanelKeyboard(ctx)));
 
-    // 1. Collect files into the queue
     if (ctx.message?.document) {
       ctx.wizard.state.files.push(ctx.message);
       const fileName = ctx.message.document.file_name || "Unknown File";
@@ -205,24 +202,22 @@ const addLectureWizard = new Scenes.WizardScene(
         );
       }
 
-      // Sort files to keep them in the order they were sent
+      // Sort by message_id to preserve send order
       ctx.wizard.state.files = ctx.wizard.state.files.sort(
         (a, b) => a.message_id - b.message_id,
       );
 
-      // Setup the loop variables
       ctx.wizard.state.currentIndex = 0;
       ctx.wizard.state.uploadedNames = [];
 
       const firstFile = ctx.wizard.state.files[0].document;
       const originalName = firstFile.file_name || "Unknown";
 
-      // Ask for the first file's name
       ctx.reply(
         `📚 We have ${ctx.wizard.state.files.length} files to process.\n\n` +
           `1️⃣ First file: ${originalName}\n` +
           `✍️ Type the button name for this lecture (or type 'skip' to use the original name):`,
-        Markup.removeKeyboard(), // Hide the Done/Cancel keyboard so they type text
+        Markup.removeKeyboard(),
       );
 
       return ctx.wizard.next();
@@ -230,7 +225,7 @@ const addLectureWizard = new Scenes.WizardScene(
 
     ctx.reply("⚠️ Please send a PDF/PPTX document, or click '✅ Done'.");
   },
-  // Step 5: Ask for names one by one and Save
+  // Step 5: Name each file one by one and save
   async (ctx) => {
     const text = ctx.message?.text;
     if (isCancel(text))
@@ -240,18 +235,18 @@ const addLectureWizard = new Scenes.WizardScene(
       return ctx.reply("⚠️ Please type a text name or 'skip'.");
     }
 
-    const currentIndex = ctx.wizard.state.currentIndex;
-    const currentMsg = ctx.wizard.state.files[currentIndex];
+    const { currentIndex, files } = ctx.wizard.state;
+    const currentMsg = files[currentIndex];
     const doc = currentMsg.document;
     const fileName = doc.file_name || "Unknown";
 
-    // Calculate original default title
+    // Strip extension to get the default title
     const defaultTitle =
       fileName.lastIndexOf(".") !== -1
         ? fileName.substring(0, fileName.lastIndexOf("."))
         : fileName;
 
-    // Determine the final title (Custom vs Default)
+    // Use custom name unless user typed 'skip'
     const finalTitle =
       text.toLowerCase() === "skip" || text === "تخطي" ? defaultTitle : text;
 
@@ -278,14 +273,11 @@ const addLectureWizard = new Scenes.WizardScene(
       );
 
       ctx.reply(`✅ Saved: ${finalTitle}`);
-      ctx.wizard.state.uploadedNames.push(finalTitle); // Add custom name to notifications array
+      ctx.wizard.state.uploadedNames.push(finalTitle);
     } catch (error) {
       console.error(error);
       ctx.reply(`❌ Error saving: ${fileName}`);
     }
-    // ---------------------------------
-
-    // Move to the next file in the queue
     ctx.wizard.state.currentIndex++;
 
     // Check if there are more files to name
@@ -298,9 +290,9 @@ const addLectureWizard = new Scenes.WizardScene(
         `\n➡️ Next file: ${nextOriginalName}\n` +
           `✍️ Type the name (or 'skip'):`,
       );
-      return; // return WITHOUT ctx.wizard.next() keeps them in Step 5 for the next message!
+      return; // stay in this step for the next file
     } else {
-      // All files are named and saved! Send Notifications.
+      // All files saved — notify the stage group if linked
       ctx.reply("✅ All uploads and naming finished.", adminPanelKeyboard(ctx));
 
       const stageObj = await Stage.findById(ctx.wizard.state.stageId);
@@ -318,8 +310,6 @@ const addLectureWizard = new Scenes.WizardScene(
     }
   },
 );
-
-// --- DELETE WIZARDS ---
 
 const delStageWizard = new Scenes.WizardScene(
   "DEL_STAGE_SCENE",
@@ -353,7 +343,7 @@ const delStageWizard = new Scenes.WizardScene(
             process.env.CHANNEL_ID,
             l.channelMsgId,
           );
-        } catch (e) {
+        } catch {
           console.log(`Failed to delete msg ${l.channelMsgId} from channel.`); // FIX: Added logging
         }
       }
@@ -419,7 +409,7 @@ const delClassWizard = new Scenes.WizardScene(
           process.env.CHANNEL_ID,
           l.channelMsgId,
         );
-      } catch (e) {
+      } catch {
         console.log(`Failed to delete msg ${l.channelMsgId} from channel.`);
       }
     }
@@ -459,7 +449,6 @@ const delLectureWizard = new Scenes.WizardScene(
       return;
     }
 
-    // 🎒 Save the stage ID into the wizard state
     ctx.wizard.state.stageId = stage._id;
 
     const classes = await timeIt(
@@ -492,7 +481,6 @@ const delLectureWizard = new Scenes.WizardScene(
       return;
     }
 
-    // 🎒 Save the class ID into the wizard state for the next step!
     ctx.wizard.state.classId = selectedClass._id;
 
     const lectures = await timeIt(
@@ -520,7 +508,7 @@ const delLectureWizard = new Scenes.WizardScene(
     if (isCancel(ctx.message?.text))
       return ctx.scene.leave(ctx.reply("Cancelled.", adminPanelKeyboard(ctx)));
 
-    // ✨ FIX: Search by BOTH title AND the classId we saved in the backpack
+    // Search by both title and classId to avoid ambiguity
     const lecture = await Lecture.findOne({
       title: ctx.message.text,
       classId: ctx.wizard.state.classId,
@@ -551,8 +539,6 @@ const delLectureWizard = new Scenes.WizardScene(
   },
 );
 
-// --- BROADCAST WIZARD ---
-
 const broadcastWizard = new Scenes.WizardScene(
   "BROADCAST_SCENE",
   (ctx) => {
@@ -576,7 +562,7 @@ const broadcastWizard = new Scenes.WizardScene(
       try {
         await ctx.telegram.sendMessage(user.chatId, `${ctx.message.text}`);
         sent++;
-      } catch (err) {
+      } catch {
         // User blocked bot
       }
     }
@@ -588,7 +574,6 @@ const broadcastWizard = new Scenes.WizardScene(
   },
 );
 
-// --- ADD ARCHIVE WIZARD ---
 const addArchiveWizard = new Scenes.WizardScene(
   "ADD_ARCHIVE_SCENE",
   (ctx) => {
@@ -615,7 +600,7 @@ const addArchiveWizard = new Scenes.WizardScene(
         Markup.keyboard([["✅ Done"], ["❌ Cancel"]]).resize(),
       );
       return ctx.wizard.next();
-    } catch (e) {
+    } catch {
       return ctx.reply(
         "❌ Error: Archive name might already exist. Try another name or click Cancel.",
       );
@@ -676,7 +661,9 @@ const addArchiveWizard = new Scenes.WizardScene(
 
       try {
         await ctx.telegram.deleteMessage(ctx.chat.id, statusMsg.message_id);
-      } catch (e) {}
+      } catch {
+        // Ignore failure to delete status message
+      }
       ctx.reply("✅ Archive upload finished.", adminPanelKeyboard(ctx));
 
       return ctx.scene.leave();
@@ -688,7 +675,7 @@ const addArchiveWizard = new Scenes.WizardScene(
 const addCreativeWizard = new Scenes.WizardScene(
   "ADD_CREATIVE_SCENE",
 
-  // STEP 1: Ask for Title
+  // Step 1: Ask for title
   (ctx) => {
     ctx.reply(
       "🎨 Type the title of the Creative topic (e.g., 'Good Presentation'):",
@@ -697,12 +684,11 @@ const addCreativeWizard = new Scenes.WizardScene(
     return ctx.wizard.next();
   },
 
-  // STEP 2: Receive Title, ask for Main Content
+  // Step 2: Receive title, ask for main content
   (ctx) => {
     if (isCancel(ctx.message?.text))
       return ctx.scene.leave(ctx.reply("Cancelled.", adminPanelKeyboard(ctx)));
 
-    // Safety Guard: Make sure they actually typed text for the title!
     if (!ctx.message?.text) {
       ctx.reply("⚠️ Please send text for the title.");
       return;
@@ -716,24 +702,21 @@ const addCreativeWizard = new Scenes.WizardScene(
     return ctx.wizard.next();
   },
 
-  // STEP 3: Receive Main Content, ask for Additional Files
+  // Step 3: Receive main content, ask for additional files
   async (ctx) => {
     if (isCancel(ctx.message?.text))
       return ctx.scene.leave(ctx.reply("Cancelled.", adminPanelKeyboard(ctx)));
 
     try {
-      // 1. Copy the main content to the channel
       const channelMsg = await ctx.telegram.copyMessage(
         process.env.CHANNEL_ID,
         ctx.chat.id,
         ctx.message.message_id,
       );
 
-      // 2. Intelligently grab the text OR the file caption
       const contentText =
         ctx.message?.text || ctx.message?.caption || "بدون وصف";
 
-      // 3. Save to Database
       const creative = await timeIt(
         "DB: Create Creative",
         Creative.create({
@@ -753,7 +736,7 @@ const addCreativeWizard = new Scenes.WizardScene(
       return ctx.wizard.next();
     } catch (e) {
       console.error("Creative Save Error", e);
-      // Fixed: Actually leave the scene on error so the admin isn't stuck forever
+      // Leave the scene on error so the admin isn't stuck
       ctx.reply(
         "❌ Error saving content. Please try again.",
         adminPanelKeyboard(ctx),
@@ -762,23 +745,18 @@ const addCreativeWizard = new Scenes.WizardScene(
     }
   },
 
-  // STEP 4: Handle Additional Files (The queue)
+  // Step 4: Handle additional files (queue)
   async (ctx) => {
     const text = ctx.message?.text;
     if (isCancel(text))
       return ctx.scene.leave(ctx.reply("Cancelled.", adminPanelKeyboard(ctx)));
 
-    // If they send a file, add it to the memory queue
     if (ctx.message?.document || ctx.message?.photo || ctx.message?.video) {
       ctx.wizard.state.files.push(ctx.message);
-      // Added a counter so you know it's working
-      ctx.reply(
-        `📥 Added to queue (Total: ${ctx.wizard.state.files.length} files)`,
-      );
+      ctx.reply(`📥 Added to queue (Total: ${ctx.wizard.state.files.length} files)`);
       return;
     }
 
-    // If they click Done, process the entire queue
     if (text === "✅ Done") {
       ctx.reply(
         `⏳ Saving ${ctx.wizard.state.files.length} creative files to channel...`,
@@ -803,7 +781,6 @@ const addCreativeWizard = new Scenes.WizardScene(
         }
 
         try {
-          // ✨ THE FATAL FIX: Using copyMessage instead of the non-existent sendCopy
           const channelMsg = await ctx.telegram.copyMessage(
             process.env.CHANNEL_ID,
             ctx.chat.id,
@@ -828,7 +805,6 @@ const addCreativeWizard = new Scenes.WizardScene(
   },
 );
 
-// --- DELETE ARCHIVE WIZARD ---
 const delArchiveWizard = new Scenes.WizardScene(
   "DEL_ARCHIVE_SCENE",
   async (ctx) => {
@@ -864,14 +840,18 @@ const delArchiveWizard = new Scenes.WizardScene(
           process.env.CHANNEL_ID,
           f.channelMsgId,
         );
-      } catch (e) {}
+      } catch {
+        // Ignore failure to delete message from channel
+      }
     }
     await ArchiveFile.deleteMany({ archiveId: archive._id });
     await Archive.findByIdAndDelete(archive._id);
 
     try {
       await ctx.telegram.deleteMessage(ctx.chat.id, statusMsg.message_id);
-    } catch (e) {}
+    } catch {
+      // Ignore failure to delete status message
+    }
     ctx.reply(
       `✅ Archive "${archive.name}" and all its files deleted.`,
       adminPanelKeyboard(ctx),
@@ -881,7 +861,6 @@ const delArchiveWizard = new Scenes.WizardScene(
   },
 );
 
-// --- DELETE CREATIVE WIZARD ---
 const delCreativeWizard = new Scenes.WizardScene(
   "DEL_CREATIVE_SCENE",
   async (ctx) => {
@@ -913,7 +892,9 @@ const delCreativeWizard = new Scenes.WizardScene(
         process.env.CHANNEL_ID,
         creative.channelMsgId,
       );
-    } catch (e) {}
+    } catch {
+      // Ignore failure to delete message from channel
+    }
 
     const files = await CreativeFile.find({ creativeId: creative._id });
     for (const f of files) {
@@ -922,7 +903,9 @@ const delCreativeWizard = new Scenes.WizardScene(
           process.env.CHANNEL_ID,
           f.channelMsgId,
         );
-      } catch (e) {}
+      } catch {
+        // Ignore failure to delete message from channel
+      }
     }
     await CreativeFile.deleteMany({ creativeId: creative._id });
     await Creative.findByIdAndDelete(creative._id);
@@ -958,7 +941,7 @@ const promoteAdminWizard = new Scenes.WizardScene(
         "❌ User not found in database. They must start the bot first.",
       );
 
-    ctx.wizard.state.targetUserId = targetUser._id; // FIX: Saved state properly
+    ctx.wizard.state.targetUserId = targetUser._id;
 
     const stages = await Stage.find();
     ctx.reply(
@@ -1064,7 +1047,7 @@ const broadcastGroupWizard = new Scenes.WizardScene(
         ctx.message.message_id,
       );
       ctx.reply("✅ Announcement sent successfully!", adminPanelKeyboard(ctx));
-    } catch (error) {
+    } catch {
       ctx.reply(
         "❌ Failed to send. Make sure the bot is still an admin in that group.",
         adminPanelKeyboard(ctx),
@@ -1119,10 +1102,10 @@ const editHomeworkWizard = new Scenes.WizardScene(
       }
       ctx.wizard.state.stageId = user.managedStageId;
       await ctx.reply("📝 Please send the new Homework text for your stage:");
-      return ctx.wizard.selectStep(2); // Skip Step 2 and go straight to Step 3
+      return ctx.wizard.selectStep(2); // Skip to step 3 (save homework)
     }
 
-    // If Owner: Ask which stage to edit
+    // Owner picks which stage to update
     const stages = await Stage.find();
     await ctx.reply(
       "🎓 Select the Stage to update homework for:",
@@ -1216,11 +1199,11 @@ const editScheduleWizard = new Scenes.WizardScene(
       );
     }
 
-    // Grab the highest resolution photo from the Admin's message
+    // Use the highest-res photo
     const photoArray = ctx.message.photo;
     const bestPhoto = photoArray[photoArray.length - 1];
 
-    // 1. FORWARD TO YOUR PRIVATE CHANNEL FOR PERMANENT SAFEKEEPING
+    // Forward to channel for permanent storage so the file_id doesn't expire
     let permanentImageId;
     try {
       const channelMsg = await ctx.telegram.sendPhoto(
@@ -1230,7 +1213,6 @@ const editScheduleWizard = new Scenes.WizardScene(
           caption: `📅 Schedule Backup (Stage ID: ${ctx.wizard.state.stageId})`,
         },
       );
-      // Grab the new, safe file_id from the channel message
       const channelPhotoArray = channelMsg.photo;
       permanentImageId =
         channelPhotoArray[channelPhotoArray.length - 1].file_id;
@@ -1240,8 +1222,7 @@ const editScheduleWizard = new Scenes.WizardScene(
       permanentImageId = bestPhoto.file_id;
     }
 
-    // 2. SAVE THE SAFE ID TO THE DATABASE
-    const stage = await Stage.findByIdAndUpdate(ctx.wizard.state.stageId, {
+    await Stage.findByIdAndUpdate(ctx.wizard.state.stageId, {
       scheduleImageId: permanentImageId,
     });
 
