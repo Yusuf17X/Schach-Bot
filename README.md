@@ -1,4 +1,4 @@
-# BIT Schach Bot (بوت سچاچ)
+# Schach Bot (بوت سچاچ)
 
 Telegram bot for managing university educational content using **Node.js**, **Telegraf**, and **MongoDB**.
 
