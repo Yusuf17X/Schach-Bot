@@ -249,15 +249,19 @@ const browseClassesWizard = new Scenes.WizardScene(
         return;
       }
 
-      const other = lectures[swapIdx];
-      await Lecture.updateOne({ _id: lecture._id }, { position: other.position });
-      await Lecture.updateOne({ _id: other._id }, { position: lecture.position });
+      // Swap in local array
+      const temp = lectures[idx];
+      lectures[idx] = lectures[swapIdx];
+      lectures[swapIdx] = temp;
 
-      // Re-fetch and rebuild inline keyboard
+      // Reassign ALL positions based on new array order and update DB
+      for (let i = 0; i < lectures.length; i++) {
+        await Lecture.updateOne({ _id: lectures[i]._id }, { position: i });
+        lectures[i].position = i;
+      }
+
+      const refreshedTheory = lectures;
       const selectedClassId = ctx.wizard.state.classId;
-      const refreshed = await Lecture.find({ classId: selectedClassId }).sort({ position: 1 });
-      const refreshedTheory = refreshed.filter((l) => l.category !== "lab");
-      ctx.wizard.state.theoryLectures = refreshedTheory;
 
       const rows = refreshedTheory.map((l, i) => {
         return [
