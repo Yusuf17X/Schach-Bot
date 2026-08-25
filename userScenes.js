@@ -191,7 +191,9 @@ async (ctx) => {
       }
 
       // Acknowledge the callback query immediately
-      await ctx.answerCallbackQuery();
+      if (typeof ctx.answerCallbackQuery === "function") {
+        await ctx.answerCallbackQuery();
+      }
 
       const user = ctx.state.dbUser;
       const isAdminOrOwner = user?.role === "admin" || user?.role === "owner";
@@ -201,7 +203,9 @@ async (ctx) => {
       }
 
       if (data === "lab_up" || data === "lab_down") {
-        await ctx.answerCallbackQuery("ℹ️ Use individual lecture buttons to reorder");
+        if (typeof ctx.answerCallbackQuery === "function") {
+          await ctx.answerCallbackQuery("ℹ️ Use individual lecture buttons to reorder");
+        }
         return;
       }
 
