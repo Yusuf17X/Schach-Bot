@@ -560,7 +560,7 @@ const broadcastWizard = new Scenes.WizardScene(
 
     for (const user of users) {
       try {
-        await ctx.telegram.sendMessage(user.chatId, `${ctx.message.text}`);
+        await ctx.telegram.copyMessage(user.chatId, ctx.chat.id, ctx.message.message_id);
         sent++;
       } catch {
         // User blocked bot
