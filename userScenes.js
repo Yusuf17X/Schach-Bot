@@ -207,7 +207,7 @@ const browseClassesWizard = new Scenes.WizardScene(
 
     // Back to classes
     if (data === "back_to_classes") {
-      await ctx.answerCallbackQuery();
+      if (typeof ctx.answerCbQuery === "function") await ctx.answerCbQuery();
       return ctx.scene.enter("BROWSE_CLASSES_SCENE");
     }
 
@@ -216,9 +216,9 @@ const browseClassesWizard = new Scenes.WizardScene(
       const idx = parseInt(data.split("_")[2], 10);
       const lectures = ctx.wizard.state.theoryLectures;
       const lecture = lectures[idx];
-      if (!lecture) return ctx.answerCallbackQuery();
+      if (!lecture) { if (typeof ctx.answerCbQuery === "function") await ctx.answerCbQuery(); return; }
 
-      await ctx.answerCallbackQuery();
+      if (typeof ctx.answerCbQuery === "function") await ctx.answerCbQuery();
 
       try {
         if (!lecture.fileId) throw new Error("No file ID");
@@ -236,7 +236,7 @@ const browseClassesWizard = new Scenes.WizardScene(
 
     // Reorder up/down
     if (data.startsWith("lecture_up_") || data.startsWith("lecture_down_")) {
-      await ctx.answerCallbackQuery();
+      if (typeof ctx.answerCbQuery === "function") await ctx.answerCbQuery();
       const isUp = data.startsWith("lecture_up_");
       const idx = parseInt(data.split("_")[2], 10);
       const lectures = ctx.wizard.state.theoryLectures;
@@ -245,7 +245,8 @@ const browseClassesWizard = new Scenes.WizardScene(
 
       const swapIdx = isUp ? idx - 1 : idx + 1;
       if (swapIdx < 0 || swapIdx >= lectures.length) {
-        return ctx.answerCallbackQuery({ text: "⚠️ لا يمكن التحرك", show_alert: true });
+        if (typeof ctx.answerCbQuery === "function") await ctx.answerCbQuery({ text: "⚠️ لا يمكن التحرك", show_alert: true });
+        return;
       }
 
       const other = lectures[swapIdx];
