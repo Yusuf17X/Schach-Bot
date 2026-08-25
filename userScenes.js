@@ -224,7 +224,6 @@ const browseClassesWizard = new Scenes.WizardScene(
         prev.position = temp;
         await lecture.save();
         await prev.save();
-        await ctx.reply("✅ تم التحديث.");
       } else if (!isUp && idx < theoryLectures.length - 1) {
         // Swap with next
         const next = theoryLectures[idx + 1];
@@ -233,7 +232,6 @@ const browseClassesWizard = new Scenes.WizardScene(
         next.position = temp;
         await lecture.save();
         await next.save();
-        await ctx.reply("✅ تم التحديث.");
       } else {
         return ctx.reply("⚠️ لا يمكن التحرك في هذا الاتجاه.");
       }
@@ -255,7 +253,7 @@ const browseClassesWizard = new Scenes.WizardScene(
       }
       rebuiltButtons.push(["🔙 العودة الى المواد", "🔝 القائمة الرئيسية"]);
 
-      await ctx.reply("📖 المحاضرات:", Markup.keyboard(rebuiltButtons).resize());
+      await ctx.reply("✅ تم التحديث.", Markup.keyboard(rebuiltButtons).resize());
       return;
     }
 
