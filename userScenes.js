@@ -243,7 +243,7 @@ const browseClassesWizard = new Scenes.WizardScene(
         console.error("Error sending lecture:", err);
         await ctx.reply("❌ خطأ, تعذر ارسال الملف.");
       }
-      return;
+      return ctx.scene.leave();
     }
 
     // Handle inline keyboard callback queries (admins/owners)
@@ -466,7 +466,8 @@ const viewArchiveWizard = new Scenes.WizardScene(
         }
       }
       try { await ctx.telegram.deleteMessage(ctx.chat.id, statusMsg.message_id); } catch {}
-      return;
+      await ctx.reply("✅ تم إرسال جميع الملفات.", mainMenuKeyboard(ctx));
+      return ctx.scene.leave();
     }
 
     // Handle inline keyboard callback queries (admins/owners)
@@ -503,7 +504,8 @@ const viewArchiveWizard = new Scenes.WizardScene(
         }
       }
       try { await ctx.telegram.deleteMessage(ctx.chat.id, statusMsg.message_id); } catch {}
-      return;
+      await ctx.reply("✅ تم إرسال جميع الملفات.", mainMenuKeyboard(ctx));
+      return ctx.scene.leave();
     }
 
     // Reorder up/down
@@ -679,7 +681,8 @@ const viewCreativeWizard = new Scenes.WizardScene(
         }
         try { await ctx.telegram.deleteMessage(ctx.chat.id, statusMsg.message_id); } catch {}
       }
-      return;
+      await ctx.reply("✅ تم إرسال جميع الملفات.", mainMenuKeyboard(ctx));
+      return ctx.scene.leave();
     }
 
     // Handle inline keyboard callback queries (admins/owners)
@@ -720,7 +723,8 @@ const viewCreativeWizard = new Scenes.WizardScene(
         }
         try { await ctx.telegram.deleteMessage(ctx.chat.id, statusMsg.message_id); } catch {}
       }
-      return;
+      await ctx.reply("✅ تم إرسال جميع الملفات.", mainMenuKeyboard(ctx));
+      return ctx.scene.leave();
     }
 
     // Reorder up/down
