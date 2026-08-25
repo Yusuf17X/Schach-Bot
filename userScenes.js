@@ -136,14 +136,17 @@ const browseClassesWizard = new Scenes.WizardScene(
     const isAdminOrOwner = ctx.state.dbUser?.role === "admin" || ctx.state.dbUser?.role === "owner";
 
     // Build lecture buttons as reply keyboard rows
-    // Each lecture gets its own row with title + reorder arrows for admin/owner
+    // Each lecture gets its own row
     const lectureButtons = theoryLectures.map((l, idx) => {
       const row = [];
 
-      // Add lecture title with reorder arrows for admin/owner
       if (isAdminOrOwner) {
-        row.push(`▲ ${l.title} ▼`);
+        // Three buttons: up arrow, lecture name, down arrow
+        row.push("▲");
+        row.push(l.title);
+        row.push("▼");
       } else {
+        // One button: lecture name (sends text to bot)
         row.push(l.title);
       }
 
