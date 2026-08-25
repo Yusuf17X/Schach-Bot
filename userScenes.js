@@ -123,7 +123,7 @@ const browseClassesWizard = new Scenes.WizardScene(
 
     const lectures = await timeIt(
       "DB: Fetch Lectures (User)",
-      Lecture.find({ classId: selectedClass._id }),
+      Lecture.find({ classId: selectedClass._id }).sort({ position: 1 }),
     );
 
     const theoryLectures = lectures.filter((l) => l.category !== "lab");
