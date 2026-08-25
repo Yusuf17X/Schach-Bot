@@ -129,56 +129,87 @@ const browseClassesWizard = new Scenes.WizardScene(
     const theoryLectures = lectures.filter((l) => l.category !== "lab");
     const labLectures = lectures.filter((l) => l.category === "lab");
 
-ctx.wizard.state.theoryLectures = theoryLectures;
+    ctx.wizard.state.theoryLectures = theoryLectures;
     ctx.wizard.state.labLectures = labLectures;
 
     // Check if user is admin or owner to show reorder buttons
     const isAdminOrOwner = ctx.state.dbUser?.role === "admin" || ctx.state.dbUser?.role === "owner";
 
-    // Build lecture buttons: each row is an array of button objects only
-    // For inline keyboard, we cannot mix strings and objects in the same row
-    // So each lecture title becomes a callback button, with reorder buttons added
+    // Build lecture buttons as reply keyboard rows
+    // Each lecture gets its own row with title + reorder arrows for admin/owner
     const lectureButtons = theoryLectures.map((l, idx) => {
-      // Each lecture gets its own row with title button + reorder buttons
       const row = [];
 
-      // Add title as a button
-      row.push(Markup.button.callback(l.title, `lecture_select_${idx}`));
-
-      // Add reorder buttons for admin/owner
+      // Add lecture title with reorder arrows for admin/owner
       if (isAdminOrOwner) {
-        row.push(Markup.button.callback("▲", `lecture_up_${idx}`));
-        row.push(Markup.button.callback("▼", `lecture_down_${idx}`));
+        row.push(`▲ ${l.title} ▼`);
+      } else {
+        row.push(l.title);
       }
 
       return row;
     });
 
     if (labLectures.length > 0) {
-      // Add Lab Lectures header row with title button + reorder buttons
-      const labHeader = [];
-      labHeader.push(Markup.button.callback("🔬 Lab Lectures", `lab_header_select`));
-      if (isAdminOrOwner) {
-        labHeader.push(Markup.button.callback("▲", `lab_up`));
-        labHeader.push(Markup.button.callback("▼", `lab_down`));
-      }
+      // Add Lab Lectures header row
+      const labHeader = ["🔬 Lab Lectures"];
       lectureButtons.unshift(labHeader);
     }
 
-    // Add main menu row with buttons only (convert strings to callback buttons)
-    const menuRow = ["🔙 العودة الى materials", "🔝 القائمة الرئيسية"].map(
-      (txt) => Markup.button.callback(txt, txt === "🔝 القائمة principale" ? "main_menu" : "back_to_materials")
-    );
+    // Add main menu row
+    const menuRow = ["🔙 العودة الى materials", "🔝 القائمة الرئيسية"];
     lectureButtons.push(menuRow);
 
-    // Use inline keyboard (all rows now contain only button objects)
-    const keyboard = Markup.inlineKeyboard(lectureButtons).resize();
+    // Use reply keyboard (buttons appear below user keyboard)
+    const keyboard = Markup.keyboard(lectureButtons).resize();
 
     await ctx.reply(
       `📖 ${selectedClass.name}\n\nاختر محاضرة:`,
       keyboard,
     );
     return ctx.wizard.next();
+  },
+  async (ctx) => {
+    // Handle text messages for lecture selection
+    const text = ctx.message?.text;
+
+    if (!text) return;
+
+    // Handle cancel
+    if (isCancel(text)) {
+      await ctx.reply("🔝 القائمة الرئيسية", mainMenuKeyboard(ctx));
+      return ctx.scene.leave();
+    }
+
+    // Handle Homework/Schedule buttons
+    if (text === "📝 الواجبات" && stage.homeworkText) {
+      await ctx.reply(`📝 الواجبات:\n\n${stage.homeworkText}`);
+      return;
+    }
+    if (text === "📅 الجدول" && stage.scheduleImageId) {
+      await ctx.telegram.sendPhoto(ctx.chat.id, stage.scheduleImageId);
+      return;
+    }
+
+    // --- Process Lecture Selection ---
+    const selectedClass = ctx.wizard.state.classId;
+    if (!selectedClass) return ctx.reply("⚠️ لم يتم تحديد مادة.");
+
+    const lectures = ctx.wizard.state.theoryLectures;
+
+    // Find the selected lecture by title
+    // Remove reorder arrows if present (for admin/owner view)
+    const cleanTitle = text.replace(/▲/g).replace(/▼/g).trim();
+    const selectedLecture = lectures.find((l) => l.title === cleanTitle);
+
+    if (!selectedLecture) return ctx.reply("⚠️ اختر محاضرة من القائمة.");
+
+    // Show confirmation
+    await ctx.reply(`✅ تم اختيار محاضرة: ${selectedLecture.title}`);
+
+    // Leave the scene - the lecture title will be processed as regular text
+    // by the main menu or other handlers
+    ctx.scene.leave();
   },
 async (ctx) => {
     // Handle callback queries for lecture reordering
@@ -215,7 +246,9 @@ async (ctx) => {
       const index = parseInt(parts[2], 10);
 
       if (isNaN(index)) {
-        await ctx.answerCallbackQuery("⚠️ Invalid lecture index");
+        if (typeof ctx.answerCallbackQuery === "function") {
+          await ctx.answerCallbackQuery("⚠️ Invalid lecture index");
+        }
         return;
       }
 
@@ -272,6 +305,7 @@ async (ctx) => {
           classId,
           position: lecture.position + 1,
         });
+
         if (!nextLecture) {
           await ctx.answerCallbackQuery("⚠️ Error finding next lecture");
           return;
@@ -680,9 +714,7 @@ const viewCreativeWizard = new Scenes.WizardScene(
         try {
           await ctx.telegram.sendDocument(ctx.chat.id, file.fileId);
         } catch {
-          await ctx.telegram
-            .sendPhoto(ctx.chat.id, file.fileId)
-            .catch(() => {});
+          await ctx.telegram.sendPhoto(ctx.chat.id, file.fileId).catch(() => {});
         }
       }
 
