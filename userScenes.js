@@ -160,7 +160,7 @@ const browseClassesWizard = new Scenes.WizardScene(
     }
 
     // Add main menu row
-    const menuRow = ["🔙 العودة الى materials", "🔝 القائمة الرئيسية"];
+    const menuRow = ["🔙 العودة الى المواد", "🔝 القائمة الرئيسية"];
     lectureButtons.push(menuRow);
 
     // Use reply keyboard (buttons appear below user keyboard)
