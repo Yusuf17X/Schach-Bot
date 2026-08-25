@@ -129,43 +129,401 @@ const browseClassesWizard = new Scenes.WizardScene(
     const theoryLectures = lectures.filter((l) => l.category !== "lab");
     const labLectures = lectures.filter((l) => l.category === "lab");
 
-    ctx.wizard.state.theoryLectures = theoryLectures;
+ctx.wizard.state.theoryLectures = theoryLectures;
     ctx.wizard.state.labLectures = labLectures;
 
-    const lectureButtons = theoryLectures.map((l) => [l.title]);
+    // Check if user is admin or owner to show reorder buttons
+    const isAdminOrOwner = ctx.state.dbUser?.role === "admin" || ctx.state.dbUser?.role === "owner";
+
+    // Build lecture buttons with reorder controls for admins/owners
+    const lectureButtons = theoryLectures.map((l, idx) => {
+      const base = [l.title];
+      if (isAdminOrOwner) {
+        base.push(
+          Markup.button.callback(`▲${idx}`, `lecture_up_${idx}`),
+          Markup.button.callback(`▼${idx}`, `lecture_down_${idx}`)
+        );
+      }
+      return base;
+    });
 
     if (labLectures.length > 0) {
-      lectureButtons.unshift(["🔬 Lab Lectures"]);
+      // Add Lab Lectures header with reorder buttons for admin/owner
+      const labHeader = ["🔬 Lab Lectures"];
+      if (isAdminOrOwner) {
+        labHeader.push(
+          Markup.button.callback("▲", `lab_up`),
+          Markup.button.callback("▼", `lab_down`)
+        );
+      }
+      lectureButtons.unshift(labHeader);
     }
 
-    lectureButtons.push(["🔙 العودة الى المواد", "🔝 القائمة الرئيسية"]);
+    lectureButtons.push(["🔙 العودة الى materials", "🔝 القائمة الرئيسية"]);
+
+    // Use inline keyboard for admin/owner to enable reorder buttons, otherwise reply keyboard
+    const keyboard = isAdminOrOwner
+      ? Markup.inlineKeyboard(lectureButtons)
+      : Markup.keyboard(lectureButtons);
 
     await ctx.reply(
       `📖 ${selectedClass.name}\n\nاختر محاضرة:`,
-      Markup.keyboard(lectureButtons).resize(),
+      keyboard.resize(),
     );
     return ctx.wizard.next();
   },
-  async (ctx) => {
+async (ctx) => {
+    // Handle callback queries for lecture reordering
+    if (ctx.callbackQuery) {
+      const data = ctx.callbackQuery.data;
+
+      // Skip if not a lecture reorder callback
+      if (!data.startsWith("lecture_") && data !== "lab_up" && data !== "lab_down") {
+        return;
+      }
+
+      // Acknowledge the callback query immediately
+      await ctx.answerCallbackQuery();
+
+      const user = ctx.state.dbUser;
+      const isAdminOrOwner = user?.role === "admin" || user?.role === "owner";
+
+      if (!isAdminOrOwner) {
+        return;
+      }
+
+      if (data === "lab_up" || data === "lab_down") {
+        await ctx.answerCallbackQuery("ℹ️ Use individual lecture buttons to reorder");
+        return;
+      }
+
+      // Extract lecture index from callback data: lecture_up_0, lecture_down_3, etc.
+      const parts = data.split("_");
+      const action = parts[1]; // "up" or "down"
+      const index = parseInt(parts[2], 10);
+
+      if (isNaN(index)) {
+        await ctx.answerCallbackQuery("⚠️ Invalid lecture index");
+        return;
+      }
+
+      const lectures = ctx.wizard.state.theoryLectures;
+      if (index < 0 || index >= lectures.length) {
+        await ctx.answerCallbackQuery("⚠️ Lecture not found");
+        return;
+      }
+
+      const lecture = lectures[index];
+      if (!lecture) {
+        await ctx.answerCallbackQuery("⚠️ Lecture not found");
+        return;
+      }
+
+      const classId = ctx.wizard.state.classId;
+
+      if (action === "up") {
+        // Move lecture up - swap position with previous
+        if (lecture.position <= 0) {
+          await ctx.answerCallbackQuery("🔝 Already at top");
+          return;
+        }
+
+        const prevLecture = await Lecture.findOne({
+          classId,
+          position: lecture.position - 1,
+        });
+        if (!prevLecture) {
+          await ctx.answerCallbackQuery("⚠️ Error finding previous lecture");
+          return;
+        }
+
+        // Swap positions
+        const temp = lecture.position;
+        lecture.position = prevLecture.position;
+        prevLecture.position = temp;
+        await lecture.save();
+        await prevLecture.save();
+
+        await ctx.answerCallbackQuery("✅ Moved up");
+      } else if (action === "down") {
+        // Move lecture down - swap position with next
+        const allLectures = await Lecture.find({ classId });
+        const sortedLectures = allLectures.sort((a, b) => a.position - b.position);
+        const lastLecture = sortedLectures[sortedLectures.length - 1];
+
+        if (lastLecture && lecture.position >= lastLecture.position) {
+          await ctx.answerCallbackQuery("🔝 Already at bottom");
+          return;
+        }
+
+        const nextLecture = await Lecture.findOne({
+          classId,
+          position: lecture.position + 1,
+        });
+        if (!nextLecture) {
+          await ctx.answerCallbackQuery("⚠️ Error finding next lecture");
+          return;
+        }
+
+        // Swap positions
+        const temp = lecture.position;
+        lecture.position = nextLecture.position;
+        nextLecture.position = temp;
+        await lecture.save();
+        await nextLecture.save();
+
+        await ctx.answerCallbackQuery("✅ Moved down");
+      }
+
+      // Refresh the lecture display
+      const selectedClass = await Class.findOne({
+        _id: ctx.wizard.state.classId,
+      });
+
+      if (!selectedClass) {
+        return;
+      }
+
+      const refetchLectures = await timeIt(
+        "DB: Refresh Lectures",
+        Lecture.find({ classId: selectedClass._id }).sort({ position: 1 }),
+      );
+
+      const refetchTheory = refetchLectures.filter((l) => l.category !== "lab");
+      const refetchLab = refetchLectures.filter((l) => l.category === "lab");
+
+      // Rebuild buttons with new positions
+      const isAdmin = ctx.state.dbUser?.role === "admin" || ctx.state.dbUser?.role === "owner";
+      const refetchButtons = refetchTheory.map((l, idx) => {
+        const base = [l.title];
+        if (isAdmin) {
+          base.push(
+            Markup.button.callback(`▲${idx}`, `lecture_up_${idx}`),
+            Markup.button.callback(`▼${idx}`, `lecture_down_${idx}`)
+          );
+        }
+        return base;
+      });
+
+      if (refetchLab.length > 0) {
+        const labHeader = ["🔬 Lab Lectures"];
+        if (isAdmin) {
+          labHeader.push(
+            Markup.button.callback("▲", `lab_up`),
+            Markup.button.callback("▼", `lab_down`)
+          );
+        }
+        refetchButtons.unshift(labHeader);
+      }
+
+      refetchButtons.push(["🔙 regreso a materiales", "🔝 lista principal"]);
+
+      const keyboard = isAdmin
+        ? Markup.inlineKeyboard(refetchButtons)
+        : Markup.keyboard(refetchButtons);
+
+      try {
+        await ctx.editMessageText(
+          `📖 ${selectedClass.name}\n\nاختر محاضرة:`,
+          {
+            reply_markup: keyboard,
+          }
+        );
+      } catch {
+        // If edit fails, just send new message
+        await ctx.reply(
+          `📖 ${selectedClass.name}\n\nاختر محاضرة:`,
+          isAdmin ? Markup.inlineKeyboard(refetchButtons).resize() : Markup.keyboard(refetchButtons).resize(),
+        );
+      }
+      return;
+      }
+
+    // Handle callback queries for lecture reordering
+    if (ctx.callbackQuery) {
+      const data = ctx.callbackQuery.data;
+
+      // Skip if not a lecture reorder callback
+      if (!data.startsWith("lecture_") && data !== "lab_up" && data !== "lab_down") {
+        return;
+      }
+
+      // Acknowledge the callback query immediately
+      await ctx.answerCallbackQuery();
+
+      const user = ctx.state.dbUser;
+      const isAdminOrOwner = user?.role === "admin" || user?.role === "owner";
+
+      if (!isAdminOrOwner) {
+        return;
+      }
+
+      if (data === "lab_up" || data === "lab_down") {
+        await ctx.answerCallbackQuery("ℹ️ Use individual lecture buttons to reorder");
+        return;
+      }
+
+      // Extract lecture index from callback data: lecture_up_0, lecture_down_3, etc.
+      const parts = data.split("_");
+      const action = parts[1]; // "up" or "down"
+      const index = parseInt(parts[2], 10);
+
+      if (isNaN(index)) {
+        await ctx.answerCallbackQuery("⚠️ Invalid lecture index");
+        return;
+      }
+
+      const lectures = ctx.wizard.state.theoryLectures;
+      if (index < 0 || index >= lectures.length) {
+        await ctx.answerCallbackQuery("⚠️ Lecture not found");
+        return;
+      }
+
+      const lecture = lectures[index];
+      if (!lecture) {
+        await ctx.answerCallbackQuery("⚠️ Lecture not found");
+        return;
+      }
+
+      const classId = ctx.wizard.state.classId;
+
+      if (action === "up") {
+        // Move lecture up - swap position with previous
+        if (lecture.position <= 0) {
+          await ctx.answerCallbackQuery("🔝 Already at top");
+          return;
+        }
+
+        const prevLecture = await Lecture.findOne({
+          classId,
+          position: lecture.position - 1,
+        });
+        if (!prevLecture) {
+          await ctx.answerCallbackQuery("⚠️ Error finding previous lecture");
+          return;
+        }
+
+        // Swap positions
+        const temp = lecture.position;
+        lecture.position = prevLecture.position;
+        prevLecture.position = temp;
+        await lecture.save();
+        await prevLecture.save();
+
+        await ctx.answerCallbackQuery("✅ Moved up");
+      } else if (action === "down") {
+        // Move lecture down - swap position with next
+        const allLectures = await Lecture.find({ classId });
+        const sortedLectures = allLectures.sort((a, b) => a.position - b.position);
+        const lastLecture = sortedLectures[sortedLectures.length - 1];
+
+        if (lastLecture && lecture.position >= lastLecture.position) {
+          await ctx.answerCallbackQuery("🔝 Already at bottom");
+          return;
+        }
+
+        const nextLecture = await Lecture.findOne({
+          classId,
+          position: lecture.position + 1,
+        });
+        if (!nextLecture) {
+          await ctx.answerCallbackQuery("⚠️ Error finding next lecture");
+          return;
+        }
+
+        // Swap positions
+        const temp = lecture.position;
+        lecture.position = nextLecture.position;
+        nextLecture.position = temp;
+        await lecture.save();
+        await nextLecture.save();
+
+        await ctx.answerCallbackQuery("✅ Moved down");
+      }
+
+      // Refresh the lecture display
+      const selectedClass = await Class.findOne({
+        _id: ctx.wizard.state.classId,
+      });
+
+      if (!selectedClass) {
+        return;
+      }
+
+      const refetchLectures = await timeIt(
+        "DB: Refresh Lectures",
+        Lecture.find({ classId: selectedClass._id }).sort({ position: 1 }),
+      );
+
+      const refetchTheory = refetchLectures.filter((l) => l.category !== "lab");
+      const refetchLab = refetchLectures.filter((l) => l.category === "lab");
+
+      // Rebuild buttons with new positions
+      const isAdmin = ctx.state.dbUser?.role === "admin" || ctx.state.dbUser?.role === "owner";
+      const refetchButtons = refetchTheory.map((l, idx) => {
+        const base = [l.title];
+        if (isAdmin) {
+          base.push(
+            Markup.button.callback(`▲${idx}`, `lecture_up_${idx}`),
+            Markup.button.callback(`▼${idx}`, `lecture_down_${idx}`)
+          );
+        }
+        return base;
+      });
+
+      if (refetchLab.length > 0) {
+        const labHeader = ["🔬 Lab Lectures"];
+        if (isAdmin) {
+          labHeader.push(
+            Markup.button.callback("▲", `lab_up`),
+            Markup.button.callback("▼", `lab_down`)
+          );
+        }
+        refetchButtons.unshift(labHeader);
+      }
+
+      refetchButtons.push(["🔙 regreso a materiales", "🔝 lista principal"]);
+
+      const keyboard = isAdmin
+        ? Markup.inlineKeyboard(refetchButtons)
+        : Markup.keyboard(refetchButtons);
+
+      try {
+        await ctx.editMessageText(
+          `📖 ${selectedClass.name}\n\nاختر محاضرة:`,
+          {
+            reply_markup: keyboard,
+          }
+        );
+      } catch {
+        // If edit fails, just send new message
+        await ctx.reply(
+          `📖 ${selectedClass.name}\n\nاختر محاضرة:`,
+          isAdmin ? Markup.inlineKeyboard(refetchButtons).resize() : Markup.keyboard(refetchButtons).resize(),
+        );
+      }
+      return;
+    }
+
     const text = ctx.message?.text;
     if (isCancel(text)) {
       await ctx.reply("🔝 القائمة الرئيسية", mainMenuKeyboard(ctx));
       return ctx.scene.leave();
     }
 
-    if (text === "🔙 العودة الى المواد") {
+    if (text === "🔙 regreso a materiales") {
       return ctx.scene.enter("BROWSE_CLASSES_SCENE");
     }
 
     // Re-show the lectures keyboard when coming back from Lab folder
-    if (text === "🔙 العودة الى المحاضرات") {
+    if (text === "🔙 regreso a materiales") {
       const theoryButtons = ctx.wizard.state.theoryLectures.map((l) => [
         l.title,
       ]);
       if (ctx.wizard.state.labLectures.length > 0) {
         theoryButtons.unshift(["🔬 Lab Lectures"]);
       }
-      theoryButtons.push(["🔙 العودة الى المواد", "🔝 القائمة الرئيسية"]);
+      theoryButtons.push(["🔙 regreso a materiales", "🔝 lista principal"]);
 
       await ctx.reply("📖 المحاضرات:", Markup.keyboard(theoryButtons).resize());
       return;
@@ -177,7 +535,7 @@ const browseClassesWizard = new Scenes.WizardScene(
       ctx.wizard.state.labLectures?.length > 0
     ) {
       const labButtons = ctx.wizard.state.labLectures.map((l) => [l.title]);
-      labButtons.push(["🔙 العودة الى المحاضرات", "🔝 القائمة الرئيسية"]);
+      labButtons.push(["🔙 regreso a materiales", "🔝 lista principal"]);
 
       await ctx.reply(
         "🔬 Lab Lectures:\n\nاختار محاضرة:",
