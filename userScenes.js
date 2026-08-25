@@ -139,14 +139,17 @@ const browseClassesWizard = new Scenes.WizardScene(
     ctx.wizard.state.isAdminOrOwner = isAdminOrOwner;
 
     function buildAdminKeyboard(lectures) {
-      const rows = lectures.map((l, idx) => {
-        return [
-          Markup.button.callback("✏️", `lecture_rename_${idx}`),
+      const rows = [];
+      lectures.forEach((l, idx) => {
+        rows.push([
           Markup.button.callback("▲", `lecture_up_${idx}`),
           Markup.button.callback(l.title, `lecture_select_${idx}`),
           Markup.button.callback("▼", `lecture_down_${idx}`),
+        ]);
+        rows.push([
+          Markup.button.callback("✏️", `lecture_rename_${idx}`),
           Markup.button.callback("🗑️", `lecture_delete_${idx}`),
-        ];
+        ]);
       });
       rows.push([
         Markup.button.callback("🔙 العودة الى المواد", "back_to_classes"),
@@ -380,13 +383,18 @@ const viewArchiveWizard = new Scenes.WizardScene(
     ctx.wizard.state.isAdminOrOwner = isAdminOrOwner;
 
     function buildAdminKeyboard(items) {
-      const rows = items.map((a, idx) => [
-        Markup.button.callback("✏️", `archive_rename_${idx}`),
-        Markup.button.callback("▲", `archive_up_${idx}`),
-        Markup.button.callback(a.name, `archive_select_${idx}`),
-        Markup.button.callback("▼", `archive_down_${idx}`),
-        Markup.button.callback("🗑️", `archive_delete_${idx}`),
-      ]);
+      const rows = [];
+      items.forEach((a, idx) => {
+        rows.push([
+          Markup.button.callback("▲", `archive_up_${idx}`),
+          Markup.button.callback(a.name, `archive_select_${idx}`),
+          Markup.button.callback("▼", `archive_down_${idx}`),
+        ]);
+        rows.push([
+          Markup.button.callback("✏️", `archive_rename_${idx}`),
+          Markup.button.callback("🗑️", `archive_delete_${idx}`),
+        ]);
+      });
       rows.push([Markup.button.callback("🔝 القائمة الرئيسية", "archive_main_menu")]);
       return Markup.inlineKeyboard(rows);
     }
@@ -584,13 +592,18 @@ const viewCreativeWizard = new Scenes.WizardScene(
     ctx.wizard.state.isAdminOrOwner = isAdminOrOwner;
 
     function buildAdminKeyboard(items) {
-      const rows = items.map((c, idx) => [
-        Markup.button.callback("✏️", `creative_rename_${idx}`),
-        Markup.button.callback("▲", `creative_up_${idx}`),
-        Markup.button.callback(c.name, `creative_select_${idx}`),
-        Markup.button.callback("▼", `creative_down_${idx}`),
-        Markup.button.callback("🗑️", `creative_delete_${idx}`),
-      ]);
+      const rows = [];
+      items.forEach((c, idx) => {
+        rows.push([
+          Markup.button.callback("▲", `creative_up_${idx}`),
+          Markup.button.callback(c.name, `creative_select_${idx}`),
+          Markup.button.callback("▼", `creative_down_${idx}`),
+        ]);
+        rows.push([
+          Markup.button.callback("✏️", `creative_rename_${idx}`),
+          Markup.button.callback("🗑️", `creative_delete_${idx}`),
+        ]);
+      });
       rows.push([Markup.button.callback("🔝 القائمة الرئيسية", "creative_main_menu")]);
       return Markup.inlineKeyboard(rows);
     }
