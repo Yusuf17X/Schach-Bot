@@ -352,7 +352,12 @@ const suggestWizard = new Scenes.WizardScene(
       try {
         await ctx.telegram.sendMessage(
           owner.chatId,
-          `💡 New suggestion from ${ctx.from.first_name || ctx.from.id} (@${ctx.from.username}):\n\n${suggestion}`,
+          `💡 New suggestion from ${ctx.from.first_name || ctx.from.id} (@${ctx.from.username}):`,
+        );
+        await ctx.telegram.copyMessage(
+          owner.chatId,
+          ctx.chat.id,
+          ctx.message.message_id,
         );
       } catch (error) {
         console.error(`Could not send suggestion to ${owner.chatId}:`, error);
