@@ -135,32 +135,43 @@ const browseClassesWizard = new Scenes.WizardScene(
     // Check if user is admin or owner to show reorder buttons
     const isAdminOrOwner = ctx.state.dbUser?.role === "admin" || ctx.state.dbUser?.role === "owner";
 
-    // Build keyboard based on user role
-    let keyboard;
-    if (isAdminOrOwner) {
-      // Inline keyboard (attached to message) with reorder arrows
-      const rows = theoryLectures.map((l, idx) => {
+    // Store for keyboard rebuilding
+    ctx.wizard.state.isAdminOrOwner = isAdminOrOwner;
+
+    function buildAdminKeyboard(lectures) {
+      const rows = lectures.map((l, idx) => {
         return [
+          Markup.button.callback("✏️", `lecture_rename_${idx}`),
           Markup.button.callback("▲", `lecture_up_${idx}`),
           Markup.button.callback(l.title, `lecture_select_${idx}`),
           Markup.button.callback("▼", `lecture_down_${idx}`),
+          Markup.button.callback("🗑️", `lecture_delete_${idx}`),
         ];
       });
-      if (labLectures.length > 0) {
-        rows.unshift([Markup.button.callback("🔬 Lab Lectures", "lab_select")]);
-      }
       rows.push([
         Markup.button.callback("🔙 العودة الى المواد", "back_to_classes"),
       ]);
-      keyboard = Markup.inlineKeyboard(rows);
-    } else {
-      // Reply keyboard (below user keyboard) - text buttons
-      const rows = theoryLectures.map((l) => [l.title]);
-      if (labLectures.length > 0) {
+      return Markup.inlineKeyboard(rows);
+    }
+
+    function buildUserKeyboard(lectures, labLectures) {
+      const rows = lectures.map((l) => [l.title]);
+      if (labLectures && labLectures.length > 0) {
         rows.unshift(["🔬 Lab Lectures"]);
       }
       rows.push(["🔙 العودة الى المواد", "🔝 القائمة الرئيسية"]);
-      keyboard = Markup.keyboard(rows).resize();
+      return Markup.keyboard(rows).resize();
+    }
+
+    ctx.wizard.state.buildAdminKeyboard = buildAdminKeyboard;
+    ctx.wizard.state.buildUserKeyboard = buildUserKeyboard;
+
+    // Build keyboard based on user role
+    let keyboard;
+    if (isAdminOrOwner) {
+      keyboard = buildAdminKeyboard(theoryLectures);
+    } else {
+      keyboard = buildUserKeyboard(theoryLectures, labLectures);
     }
 
     await ctx.reply(
@@ -173,6 +184,37 @@ const browseClassesWizard = new Scenes.WizardScene(
     // Handle reply keyboard text messages (regular users)
     const text = ctx.message?.text;
     if (text) {
+      // Handle rename input for admins
+      if (ctx.wizard.state.renamingIdx !== undefined) {
+        const idx = ctx.wizard.state.renamingIdx;
+        delete ctx.wizard.state.renamingIdx;
+
+        const lectures = ctx.wizard.state.theoryLectures;
+        const lecture = lectures[idx];
+        if (!lecture) return ctx.reply("⚠️ محاضرة غير موجودة.");
+
+        const newName = text.trim();
+        if (!newName) return ctx.reply("⚠️ الاسم لا يمكن أن يكون فارغاً.");
+
+        const oldName = lecture.title;
+        await Lecture.updateOne({ _id: lecture._id }, { title: newName });
+        lecture.title = newName;
+
+        const selectedClassId = ctx.wizard.state.classId;
+        const buildAdminKeyboard = ctx.wizard.state.buildAdminKeyboard;
+
+        try {
+          const className = (await Class.findOne({ _id: selectedClassId }))?.name || "";
+          await ctx.reply(
+            `✅ تم تغيير اسم "${oldName}" إلى "${newName}"`,
+            buildAdminKeyboard(lectures)
+          );
+        } catch (e) {
+          console.error("Failed to send updated keyboard:", e.message);
+        }
+        return;
+      }
+
       if (isCancel(text)) {
         await ctx.reply("🔝 القائمة الرئيسية", mainMenuKeyboard(ctx));
         return ctx.scene.leave();
@@ -260,25 +302,61 @@ const browseClassesWizard = new Scenes.WizardScene(
         lectures[i].position = i;
       }
 
-      const refreshedTheory = lectures;
       const selectedClassId = ctx.wizard.state.classId;
-
-      const rows = refreshedTheory.map((l, i) => {
-        return [
-          Markup.button.callback("▲", `lecture_up_${i}`),
-          Markup.button.callback(l.title, `lecture_select_${i}`),
-          Markup.button.callback("▼", `lecture_down_${i}`),
-        ];
-      });
-      rows.push([
-        Markup.button.callback("🔙 العودة الى المواد", "back_to_classes"),
-      ]);
+      const buildAdminKeyboard = ctx.wizard.state.buildAdminKeyboard;
 
       try {
         const className = (await Class.findOne({ _id: selectedClassId }))?.name || "";
         await ctx.editMessageText(
           `📖 ${className}\n\nاختر محاضرة:`,
-          Markup.inlineKeyboard(rows)
+          buildAdminKeyboard(lectures)
+        );
+      } catch (e) {
+        console.error("editMessageText failed:", e.message);
+      }
+      return;
+    }
+
+    // Rename lecture - prompt
+    if (data.startsWith("lecture_rename_")) {
+      const idx = parseInt(data.split("_")[2], 10);
+      const lectures = ctx.wizard.state.theoryLectures;
+      const lecture = lectures[idx];
+      if (!lecture) return;
+
+      if (typeof ctx.answerCbQuery === "function") await ctx.answerCbQuery();
+
+      ctx.wizard.state.renamingIdx = idx;
+      await ctx.reply(`✏️ اكتب الاسم الجديد لمحاضرة "${lecture.title}":`);
+      return;
+    }
+
+    // Delete lecture
+    if (data.startsWith("lecture_delete_")) {
+      const idx = parseInt(data.split("_")[2], 10);
+      const lectures = ctx.wizard.state.theoryLectures;
+      const lecture = lectures[idx];
+      if (!lecture) return;
+
+      if (typeof ctx.answerCbQuery === "function") await ctx.answerCbQuery();
+
+      await Lecture.deleteOne({ _id: lecture._id });
+      lectures.splice(idx, 1);
+
+      // Reassign ALL positions
+      for (let i = 0; i < lectures.length; i++) {
+        await Lecture.updateOne({ _id: lectures[i]._id }, { position: i });
+        lectures[i].position = i;
+      }
+
+      const selectedClassId = ctx.wizard.state.classId;
+      const buildAdminKeyboard = ctx.wizard.state.buildAdminKeyboard;
+
+      try {
+        const className = (await Class.findOne({ _id: selectedClassId }))?.name || "";
+        await ctx.editMessageText(
+          `📖 ${className}\n\nاختر محاضرة:`,
+          buildAdminKeyboard(lectures)
         );
       } catch (e) {
         console.error("editMessageText failed:", e.message);
