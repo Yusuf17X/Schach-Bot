@@ -141,10 +141,10 @@ const browseClassesWizard = new Scenes.WizardScene(
       const row = [];
 
       if (isAdminOrOwner) {
-        // Three buttons: up arrow, lecture name, down arrow
-        row.push("▲");
+        // Three buttons: up arrow with name, lecture name, down arrow with name
+        row.push(`▲ ${l.title}`);
         row.push(l.title);
-        row.push("▼");
+        row.push(`▼ ${l.title}`);
       } else {
         // One button: lecture name (sends text to bot)
         row.push(l.title);
@@ -201,15 +201,67 @@ const browseClassesWizard = new Scenes.WizardScene(
     }
 
     // --- Process Lecture Selection ---
-    const selectedClass = ctx.wizard.state.classId;
-    if (!selectedClass) return ctx.reply("⚠️ لم يتم تحديد مادة.");
+    const selectedClassId = ctx.wizard.state.classId;
+    if (!selectedClassId) return ctx.reply("⚠️ لم يتم تحديد مادة.");
 
-    const lectures = ctx.wizard.state.theoryLectures;
+    const theoryLectures = ctx.wizard.state.theoryLectures;
 
-    // Find the selected lecture by title
-    // Remove reorder arrows if present (for admin/owner view)
-    const cleanTitle = text.replace(/▲/g).replace(/▼/g).trim();
-    const selectedLecture = lectures.find((l) => l.title === cleanTitle);
+    // Handle reorder: ▲ Lec name or ▼ Lec name
+    if (text.startsWith("▲ ") || text.startsWith("▼ ")) {
+      const isUp = text.startsWith("▲");
+      const lectureName = text.replace(/^▲\s*/, "").replace(/^▼\s*/, "").trim();
+      const idx = theoryLectures.findIndex((l) => l.title === lectureName);
+
+      if (idx === -1) return ctx.reply("⚠️ محاضرة غير موجودة.");
+
+      const lecture = theoryLectures[idx];
+
+      if (isUp && idx > 0) {
+        // Swap with previous
+        const prev = theoryLectures[idx - 1];
+        const temp = lecture.position;
+        lecture.position = prev.position;
+        prev.position = temp;
+        await lecture.save();
+        await prev.save();
+        await ctx.reply("✅ تم التحديث.");
+      } else if (!isUp && idx < theoryLectures.length - 1) {
+        // Swap with next
+        const next = theoryLectures[idx + 1];
+        const temp = lecture.position;
+        lecture.position = next.position;
+        next.position = temp;
+        await lecture.save();
+        await next.save();
+        await ctx.reply("✅ تم التحديث.");
+      } else {
+        return ctx.reply("⚠️ لا يمكن التحرك في هذا الاتجاه.");
+      }
+
+      // Re-fetch and rebuild keyboard
+      const refreshed = await Lecture.find({ classId: selectedClassId }).sort({ position: 1 });
+      const refreshedTheory = refreshed.filter((l) => l.category !== "lab");
+      ctx.wizard.state.theoryLectures = refreshedTheory;
+
+      const isAdmin = ctx.state.dbUser?.role === "admin" || ctx.state.dbUser?.role === "owner";
+      const rebuiltButtons = refreshedTheory.map((l) => {
+        if (isAdmin) return [`▲ ${l.title}`, l.title, `▼ ${l.title}`];
+        return [l.title];
+      });
+
+      const labLectures = ctx.wizard.state.labLectures;
+      if (labLectures && labLectures.length > 0) {
+        rebuiltButtons.unshift(["🔬 Lab Lectures"]);
+      }
+      rebuiltButtons.push(["🔙 العودة الى المواد", "🔝 القائمة الرئيسية"]);
+
+      await ctx.reply("📖 المحاضرات:", Markup.keyboard(rebuiltButtons).resize());
+      return;
+    }
+
+    // Handle lecture selection (plain title)
+    const cleanTitle = text.replace(/▲\s*/g, "").replace(/▼\s*/g, "").trim();
+    const selectedLecture = theoryLectures.find((l) => l.title === cleanTitle);
 
     if (!selectedLecture) return ctx.reply("⚠️ اختر محاضرة من القائمة.");
 
