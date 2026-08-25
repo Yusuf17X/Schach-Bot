@@ -205,10 +205,6 @@ const browseClassesWizard = new Scenes.WizardScene(
     if (!ctx.callbackQuery) return;
     const data = ctx.callbackQuery.data;
 
-    if (typeof ctx.answerCallbackQuery === "function") {
-      await ctx.answerCallbackQuery();
-    }
-
     // Back to classes
     if (data === "back_to_classes") {
       await ctx.answerCallbackQuery();
@@ -220,7 +216,9 @@ const browseClassesWizard = new Scenes.WizardScene(
       const idx = parseInt(data.split("_")[2], 10);
       const lectures = ctx.wizard.state.theoryLectures;
       const lecture = lectures[idx];
-      if (!lecture) return;
+      if (!lecture) return ctx.answerCallbackQuery();
+
+      await ctx.answerCallbackQuery();
 
       try {
         if (!lecture.fileId) throw new Error("No file ID");
@@ -238,6 +236,7 @@ const browseClassesWizard = new Scenes.WizardScene(
 
     // Reorder up/down
     if (data.startsWith("lecture_up_") || data.startsWith("lecture_down_")) {
+      await ctx.answerCallbackQuery();
       const isUp = data.startsWith("lecture_up_");
       const idx = parseInt(data.split("_")[2], 10);
       const lectures = ctx.wizard.state.theoryLectures;
@@ -271,12 +270,13 @@ const browseClassesWizard = new Scenes.WizardScene(
       ]);
 
       try {
+        const className = (await Class.findOne({ _id: selectedClassId }))?.name || "";
         await ctx.editMessageText(
-          `📖 ${(await Class.findOne({ _id: selectedClassId }))?.name || ""}\n\nاختر محاضرة:`,
-          { reply_markup: Markup.inlineKeyboard(rows) }
+          `📖 ${className}\n\nاختر محاضرة:`,
+          Markup.inlineKeyboard(rows)
         );
-      } catch {
-        await ctx.reply("✅ تم التحديث.", Markup.inlineKeyboard(rows));
+      } catch (e) {
+        console.error("editMessageText failed:", e.message);
       }
       return;
     }
