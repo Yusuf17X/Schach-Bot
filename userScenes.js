@@ -207,11 +207,28 @@ const browseClassesWizard = new Scenes.WizardScene(
 
     if (!selectedLecture) return ctx.reply("⚠️ اختر محاضرة من القائمة.");
 
-    // Show confirmation
-    await ctx.reply(`✅ تم اختيار محاضرة: ${selectedLecture.title}`);
+    // Send the lecture file
+    const statusMsg = await ctx.reply(`⏳ إرسال ${selectedLecture.title}...`);
 
-    // Leave the scene - the lecture title will be processed as regular text
-    // by the main menu or other handlers
+    try {
+      await timeIt(
+        `TG: Send file ${selectedLecture.title}`,
+        ctx.telegram.sendDocument(ctx.chat.id, selectedLecture.fileId, {
+          caption: selectedLecture.title,
+        }),
+      );
+    } catch (err) {
+      console.error(err);
+      await ctx.reply("❌ خطأ, تعذر ارسال الملف.");
+    }
+
+    try {
+      await ctx.telegram.deleteMessage(ctx.chat.id, statusMsg.message_id);
+    } catch {
+      // Ignore failure to delete status message
+    }
+
+    // Leave the scene after sending the lecture
     ctx.scene.leave();
   },
 async (ctx) => {
