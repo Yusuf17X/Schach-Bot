@@ -369,93 +369,87 @@ const browseClassesWizard = new Scenes.WizardScene(
 const viewArchiveWizard = new Scenes.WizardScene(
   "VIEW_ARCHIVE_SCENE",
   async (ctx) => {
-    const archives = await timeIt("DB: Fetch Archives", Archive.find());
+    const archives = await timeIt("DB: Fetch Archives", Archive.find().sort({ position: 1 }));
     if (archives.length === 0) {
       await ctx.reply("هذا القسم فارغ حاليا....", mainMenuKeyboard(ctx));
       return ctx.scene.leave();
     }
 
-    ctx.reply(
-      "📦 اختر أرشيف:",
-      Markup.keyboard([
-        ...archives.map((a) => [a.name]),
-        ["🔝 القائمة الرئيسية"],
-      ]).resize(),
-    );
+    ctx.wizard.state.archives = archives;
+    const isAdminOrOwner = ctx.state.dbUser?.role === "admin" || ctx.state.dbUser?.role === "owner";
+    ctx.wizard.state.isAdminOrOwner = isAdminOrOwner;
+
+    function buildAdminKeyboard(items) {
+      const rows = items.map((a, idx) => [
+        Markup.button.callback("✏️", `archive_rename_${idx}`),
+        Markup.button.callback("▲", `archive_up_${idx}`),
+        Markup.button.callback(a.name, `archive_select_${idx}`),
+        Markup.button.callback("▼", `archive_down_${idx}`),
+        Markup.button.callback("🗑️", `archive_delete_${idx}`),
+      ]);
+      rows.push([Markup.button.callback("🔝 القائمة الرئيسية", "archive_main_menu")]);
+      return Markup.inlineKeyboard(rows);
+    }
+
+    function buildUserKeyboard(items) {
+      const rows = items.map((a) => [a.name]);
+      rows.push(["🔝 القائمة الرئيسية"]);
+      return Markup.keyboard(rows).resize();
+    }
+
+    ctx.wizard.state.buildAdminKeyboard = buildAdminKeyboard;
+    ctx.wizard.state.buildUserKeyboard = buildUserKeyboard;
+
+    const keyboard = isAdminOrOwner ? buildAdminKeyboard(archives) : buildUserKeyboard(archives);
+
+    await ctx.reply("📦 اختر أرشيف:", keyboard);
     return ctx.wizard.next();
   },
   async (ctx) => {
-    if (isCancel(ctx.message?.text)) {
-      await ctx.reply("🔝 القائمة الرئيسية", mainMenuKeyboard(ctx));
-      return ctx.scene.leave();
-    }
+    // Handle text messages (regular users + rename input)
+    const text = ctx.message?.text;
+    if (text) {
+      // Handle rename input for admins
+      if (ctx.wizard.state.renamingIdx !== undefined) {
+        const idx = ctx.wizard.state.renamingIdx;
+        delete ctx.wizard.state.renamingIdx;
 
-    const archive = await Archive.findOne({ name: ctx.message.text });
-    if (!archive) return ctx.reply("⚠️ اختر أرشيف صحيح من الازرار.");
+        const archives = ctx.wizard.state.archives;
+        const archive = archives[idx];
+        if (!archive) return ctx.reply("⚠️ أرشيف غير موجود.");
 
-    const files = await ArchiveFile.find({ archiveId: archive._id });
-    if (files.length === 0) {
-      await ctx.reply("⚠️ هذا الأرشيف فارغ.", mainMenuKeyboard(ctx));
-      return ctx.scene.leave();
-    }
+        const newName = text.trim();
+        if (!newName) return ctx.reply("⚠️ الاسم لا يمكن أن يكون فارغاً.");
 
-    ctx.reply(`⏳ إرسال ${files.length} ملفات من ${archive.name}...`);
-    for (const file of files) {
-      try {
-        await ctx.telegram.sendDocument(ctx.chat.id, file.fileId);
-      } catch {
-        await ctx.telegram.sendPhoto(ctx.chat.id, file.fileId).catch(() => {});
+        const oldName = archive.name;
+        await Archive.updateOne({ _id: archive._id }, { name: newName });
+        archive.name = newName;
+
+        const buildAdminKeyboard = ctx.wizard.state.buildAdminKeyboard;
+        await ctx.reply(
+          `✅ تم تغيير اسم "${oldName}" إلى "${newName}"`,
+          buildAdminKeyboard(archives)
+        );
+        return;
       }
-    }
 
-    await ctx.reply("✅ تم إرسال جميع الملفات.", mainMenuKeyboard(ctx));
-    return ctx.scene.leave();
-  },
-);
+      if (isCancel(text) || text === "🔝 القائمة الرئيسية") {
+        await ctx.reply("🔝 القائمة الرئيسية", mainMenuKeyboard(ctx));
+        return ctx.scene.leave();
+      }
 
-const viewCreativeWizard = new Scenes.WizardScene(
-  "VIEW_CREATIVE_SCENE",
-  async (ctx) => {
-    const creatives = await timeIt("DB: Fetch Creatives", Creative.find());
-    if (creatives.length === 0) {
-      await ctx.reply("هذا القسم فارغ حاليا....", mainMenuKeyboard(ctx));
-      return ctx.scene.leave();
-    }
+      // Regular user - find archive by name and send files
+      const archives = ctx.wizard.state.archives;
+      const archive = archives.find((a) => a.name === text);
+      if (!archive) return ctx.reply("⚠️ اختر أرشيف صحيح من الازرار.");
 
-    ctx.reply(
-      "🎨 اختر زر:",
-      Markup.keyboard([
-        ...creatives.map((c) => [c.name]),
-        ["🔝 القائمة الرئيسية"],
-      ]).resize(),
-    );
-    return ctx.wizard.next();
-  },
-  async (ctx) => {
-    if (isCancel(ctx.message?.text)) {
-      await ctx.reply("🔝 القائمة الرئيسية", mainMenuKeyboard(ctx));
-      return ctx.scene.leave();
-    }
+      const files = await ArchiveFile.find({ archiveId: archive._id });
+      if (files.length === 0) {
+        await ctx.reply("⚠️ هذا الأرشيف فارغ.");
+        return;
+      }
 
-    const creative = await Creative.findOne({ name: ctx.message.text });
-    if (!creative) return ctx.reply("⚠️ اختر زر من الازرار الموجودة.");
-
-    try {
-      await ctx.telegram.copyMessage(
-        ctx.chat.id,
-        process.env.CHANNEL_ID,
-        creative.channelMsgId,
-      );
-    } catch (error) {
-      console.error("Failed to copy message:", error);
-      // Fall back to plain text if the channel message was deleted
-      await ctx.reply(`🎨 ${creative.name}\n\n${creative.text}`);
-    }
-
-    const files = await CreativeFile.find({ creativeId: creative._id });
-    if (files.length > 0) {
-      const statusMsg = await ctx.reply(`⏳ إرسال الملفات المرفقة...`);
-
+      const statusMsg = await ctx.reply(`⏳ إرسال ${files.length} ملفات من ${archive.name}...`);
       for (const file of files) {
         try {
           await ctx.telegram.sendDocument(ctx.chat.id, file.fileId);
@@ -463,12 +457,332 @@ const viewCreativeWizard = new Scenes.WizardScene(
           await ctx.telegram.sendPhoto(ctx.chat.id, file.fileId).catch(() => {});
         }
       }
+      try { await ctx.telegram.deleteMessage(ctx.chat.id, statusMsg.message_id); } catch {}
+      return;
+    }
+
+    // Handle inline keyboard callback queries (admins/owners)
+    if (!ctx.callbackQuery) return;
+    const data = ctx.callbackQuery.data;
+
+    // Main menu
+    if (data === "archive_main_menu") {
+      if (typeof ctx.answerCbQuery === "function") await ctx.answerCbQuery();
+      await ctx.reply("🔝 القائمة الرئيسية", mainMenuKeyboard(ctx));
+      return ctx.scene.leave();
+    }
+
+    // Select archive - send files
+    if (data.startsWith("archive_select_")) {
+      const idx = parseInt(data.split("_")[2], 10);
+      const archives = ctx.wizard.state.archives;
+      const archive = archives[idx];
+      if (!archive) return;
+      if (typeof ctx.answerCbQuery === "function") await ctx.answerCbQuery();
+
+      const files = await ArchiveFile.find({ archiveId: archive._id });
+      if (files.length === 0) {
+        await ctx.reply("⚠️ هذا الأرشيف فارغ.");
+        return;
+      }
+
+      const statusMsg = await ctx.reply(`⏳ إرسال ${files.length} ملفات من ${archive.name}...`);
+      for (const file of files) {
+        try {
+          await ctx.telegram.sendDocument(ctx.chat.id, file.fileId);
+        } catch {
+          await ctx.telegram.sendPhoto(ctx.chat.id, file.fileId).catch(() => {});
+        }
+      }
+      try { await ctx.telegram.deleteMessage(ctx.chat.id, statusMsg.message_id); } catch {}
+      return;
+    }
+
+    // Reorder up/down
+    if (data.startsWith("archive_up_") || data.startsWith("archive_down_")) {
+      if (typeof ctx.answerCbQuery === "function") await ctx.answerCbQuery();
+      const isUp = data.startsWith("archive_up_");
+      const idx = parseInt(data.split("_")[2], 10);
+      const archives = ctx.wizard.state.archives;
+      if (!archives[idx]) return;
+
+      const swapIdx = isUp ? idx - 1 : idx + 1;
+      if (swapIdx < 0 || swapIdx >= archives.length) {
+        if (typeof ctx.answerCbQuery === "function") await ctx.answerCbQuery({ text: "⚠️ لا يمكن التحرك", show_alert: true });
+        return;
+      }
+
+      const temp = archives[idx];
+      archives[idx] = archives[swapIdx];
+      archives[swapIdx] = temp;
+
+      for (let i = 0; i < archives.length; i++) {
+        await Archive.updateOne({ _id: archives[i]._id }, { position: i });
+        archives[i].position = i;
+      }
 
       try {
-        await ctx.telegram.deleteMessage(ctx.chat.id, statusMsg.message_id);
-      } catch {
-        // Ignore failure to delete status message
+        await ctx.editMessageText("📦 اختر أرشيف:", ctx.wizard.state.buildAdminKeyboard(archives));
+      } catch (e) {
+        console.error("editMessageText failed:", e.message);
       }
+      return;
+    }
+
+    // Rename archive - prompt
+    if (data.startsWith("archive_rename_")) {
+      const idx = parseInt(data.split("_")[2], 10);
+      const archives = ctx.wizard.state.archives;
+      const archive = archives[idx];
+      if (!archive) return;
+
+      if (typeof ctx.answerCbQuery === "function") await ctx.answerCbQuery();
+      ctx.wizard.state.renamingIdx = idx;
+      await ctx.reply(`✏️ اكتب الاسم الجديد لأرشيف "${archive.name}":`);
+      return;
+    }
+
+    // Delete archive
+    if (data.startsWith("archive_delete_")) {
+      const idx = parseInt(data.split("_")[2], 10);
+      const archives = ctx.wizard.state.archives;
+      const archive = archives[idx];
+      if (!archive) return;
+
+      if (typeof ctx.answerCbQuery === "function") await ctx.answerCbQuery();
+
+      await ArchiveFile.deleteMany({ archiveId: archive._id });
+      await Archive.deleteOne({ _id: archive._id });
+      archives.splice(idx, 1);
+
+      for (let i = 0; i < archives.length; i++) {
+        await Archive.updateOne({ _id: archives[i]._id }, { position: i });
+        archives[i].position = i;
+      }
+
+      try {
+        await ctx.editMessageText("📦 اختر أرشيف:", ctx.wizard.state.buildAdminKeyboard(archives));
+      } catch (e) {
+        console.error("editMessageText failed:", e.message);
+      }
+      return;
+    }
+  },
+);
+
+const viewCreativeWizard = new Scenes.WizardScene(
+  "VIEW_CREATIVE_SCENE",
+  async (ctx) => {
+    const creatives = await timeIt("DB: Fetch Creatives", Creative.find().sort({ position: 1 }));
+    if (creatives.length === 0) {
+      await ctx.reply("هذا القسم فارغ حاليا....", mainMenuKeyboard(ctx));
+      return ctx.scene.leave();
+    }
+
+    ctx.wizard.state.creatives = creatives;
+    const isAdminOrOwner = ctx.state.dbUser?.role === "admin" || ctx.state.dbUser?.role === "owner";
+    ctx.wizard.state.isAdminOrOwner = isAdminOrOwner;
+
+    function buildAdminKeyboard(items) {
+      const rows = items.map((c, idx) => [
+        Markup.button.callback("✏️", `creative_rename_${idx}`),
+        Markup.button.callback("▲", `creative_up_${idx}`),
+        Markup.button.callback(c.name, `creative_select_${idx}`),
+        Markup.button.callback("▼", `creative_down_${idx}`),
+        Markup.button.callback("🗑️", `creative_delete_${idx}`),
+      ]);
+      rows.push([Markup.button.callback("🔝 القائمة الرئيسية", "creative_main_menu")]);
+      return Markup.inlineKeyboard(rows);
+    }
+
+    function buildUserKeyboard(items) {
+      const rows = items.map((c) => [c.name]);
+      rows.push(["🔝 القائمة الرئيسية"]);
+      return Markup.keyboard(rows).resize();
+    }
+
+    ctx.wizard.state.buildAdminKeyboard = buildAdminKeyboard;
+    ctx.wizard.state.buildUserKeyboard = buildUserKeyboard;
+
+    const keyboard = isAdminOrOwner ? buildAdminKeyboard(creatives) : buildUserKeyboard(creatives);
+
+    await ctx.reply("🎨 اختر زر:", keyboard);
+    return ctx.wizard.next();
+  },
+  async (ctx) => {
+    // Handle text messages (regular users + rename input)
+    const text = ctx.message?.text;
+    if (text) {
+      // Handle rename input for admins
+      if (ctx.wizard.state.renamingIdx !== undefined) {
+        const idx = ctx.wizard.state.renamingIdx;
+        delete ctx.wizard.state.renamingIdx;
+
+        const creatives = ctx.wizard.state.creatives;
+        const creative = creatives[idx];
+        if (!creative) return ctx.reply("⚠️ أداة غير موجودة.");
+
+        const newName = text.trim();
+        if (!newName) return ctx.reply("⚠️ الاسم لا يمكن أن يكون فارغاً.");
+
+        const oldName = creative.name;
+        await Creative.updateOne({ _id: creative._id }, { name: newName });
+        creative.name = newName;
+
+        const buildAdminKeyboard = ctx.wizard.state.buildAdminKeyboard;
+        await ctx.reply(
+          `✅ تم تغيير اسم "${oldName}" إلى "${newName}"`,
+          buildAdminKeyboard(creatives)
+        );
+        return;
+      }
+
+      if (isCancel(text) || text === "🔝 القائمة الرئيسية") {
+        await ctx.reply("🔝 القائمة الرئيسية", mainMenuKeyboard(ctx));
+        return ctx.scene.leave();
+      }
+
+      // Regular user - find creative by name and show content
+      const creatives = ctx.wizard.state.creatives;
+      const creative = creatives.find((c) => c.name === text);
+      if (!creative) return ctx.reply("⚠️ اختر زر من الازرار الموجودة.");
+
+      try {
+        await ctx.telegram.copyMessage(ctx.chat.id, process.env.CHANNEL_ID, creative.channelMsgId);
+      } catch (error) {
+        console.error("Failed to copy message:", error);
+        await ctx.reply(`🎨 ${creative.name}\n\n${creative.text}`);
+      }
+
+      const files = await CreativeFile.find({ creativeId: creative._id });
+      if (files.length > 0) {
+        const statusMsg = await ctx.reply(`⏳ إرسال الملفات المرفقة...`);
+        for (const file of files) {
+          try {
+            await ctx.telegram.sendDocument(ctx.chat.id, file.fileId);
+          } catch {
+            await ctx.telegram.sendPhoto(ctx.chat.id, file.fileId).catch(() => {});
+          }
+        }
+        try { await ctx.telegram.deleteMessage(ctx.chat.id, statusMsg.message_id); } catch {}
+      }
+      return;
+    }
+
+    // Handle inline keyboard callback queries (admins/owners)
+    if (!ctx.callbackQuery) return;
+    const data = ctx.callbackQuery.data;
+
+    // Main menu
+    if (data === "creative_main_menu") {
+      if (typeof ctx.answerCbQuery === "function") await ctx.answerCbQuery();
+      await ctx.reply("🔝 القائمة الرئيسية", mainMenuKeyboard(ctx));
+      return ctx.scene.leave();
+    }
+
+    // Select creative - show content + files
+    if (data.startsWith("creative_select_")) {
+      const idx = parseInt(data.split("_")[2], 10);
+      const creatives = ctx.wizard.state.creatives;
+      const creative = creatives[idx];
+      if (!creative) return;
+      if (typeof ctx.answerCbQuery === "function") await ctx.answerCbQuery();
+
+      try {
+        await ctx.telegram.copyMessage(ctx.chat.id, process.env.CHANNEL_ID, creative.channelMsgId);
+      } catch (error) {
+        console.error("Failed to copy message:", error);
+        await ctx.reply(`🎨 ${creative.name}\n\n${creative.text}`);
+      }
+
+      const files = await CreativeFile.find({ creativeId: creative._id });
+      if (files.length > 0) {
+        const statusMsg = await ctx.reply(`⏳ إرسال الملفات المرفقة...`);
+        for (const file of files) {
+          try {
+            await ctx.telegram.sendDocument(ctx.chat.id, file.fileId);
+          } catch {
+            await ctx.telegram.sendPhoto(ctx.chat.id, file.fileId).catch(() => {});
+          }
+        }
+        try { await ctx.telegram.deleteMessage(ctx.chat.id, statusMsg.message_id); } catch {}
+      }
+      return;
+    }
+
+    // Reorder up/down
+    if (data.startsWith("creative_up_") || data.startsWith("creative_down_")) {
+      if (typeof ctx.answerCbQuery === "function") await ctx.answerCbQuery();
+      const isUp = data.startsWith("creative_up_");
+      const idx = parseInt(data.split("_")[2], 10);
+      const creatives = ctx.wizard.state.creatives;
+      if (!creatives[idx]) return;
+
+      const swapIdx = isUp ? idx - 1 : idx + 1;
+      if (swapIdx < 0 || swapIdx >= creatives.length) {
+        if (typeof ctx.answerCbQuery === "function") await ctx.answerCbQuery({ text: "⚠️ لا يمكن التحرك", show_alert: true });
+        return;
+      }
+
+      const temp = creatives[idx];
+      creatives[idx] = creatives[swapIdx];
+      creatives[swapIdx] = temp;
+
+      for (let i = 0; i < creatives.length; i++) {
+        await Creative.updateOne({ _id: creatives[i]._id }, { position: i });
+        creatives[i].position = i;
+      }
+
+      try {
+        await ctx.editMessageText("🎨 اختر زر:", ctx.wizard.state.buildAdminKeyboard(creatives));
+      } catch (e) {
+        console.error("editMessageText failed:", e.message);
+      }
+      return;
+    }
+
+    // Rename creative - prompt
+    if (data.startsWith("creative_rename_")) {
+      const idx = parseInt(data.split("_")[2], 10);
+      const creatives = ctx.wizard.state.creatives;
+      const creative = creatives[idx];
+      if (!creative) return;
+
+      if (typeof ctx.answerCbQuery === "function") await ctx.answerCbQuery();
+      ctx.wizard.state.renamingIdx = idx;
+      await ctx.reply(`✏️ اكتب الاسم الجديد لأداة "${creative.name}":`);
+      return;
+    }
+
+    // Delete creative
+    if (data.startsWith("creative_delete_")) {
+      const idx = parseInt(data.split("_")[2], 10);
+      const creatives = ctx.wizard.state.creatives;
+      const creative = creatives[idx];
+      if (!creative) return;
+
+      if (typeof ctx.answerCbQuery === "function") await ctx.answerCbQuery();
+
+      // Delete channel message
+      try {
+        await ctx.telegram.deleteMessage(process.env.CHANNEL_ID, creative.channelMsgId);
+      } catch {}
+
+      await CreativeFile.deleteMany({ creativeId: creative._id });
+      await Creative.deleteOne({ _id: creative._id });
+      creatives.splice(idx, 1);
+
+      for (let i = 0; i < creatives.length; i++) {
+        await Creative.updateOne({ _id: creatives[i]._id }, { position: i });
+        creatives[i].position = i;
+      }
+
+      try {
+        await ctx.editMessageText("🎨 اختر زر:", ctx.wizard.state.buildAdminKeyboard(creatives));
+      } catch (e) {
+        console.error("editMessageText failed:", e.message);
+      }
+      return;
     }
   },
 );

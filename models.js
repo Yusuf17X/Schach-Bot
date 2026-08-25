@@ -97,6 +97,7 @@ userSchema.virtual("isOwner").get(function () {
 const archiveSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, unique: true, trim: true },
+    position: { type: Number, default: 0 },
   },
   {
     timestamps: true,
@@ -125,6 +126,7 @@ const creativeSchema = new mongoose.Schema(
     name: { type: String, required: true, unique: true, trim: true },
     text: { type: String, required: true, trim: true },
     channelMsgId: { type: Number, required: true },
+    position: { type: Number, default: 0 },
   },
   {
     timestamps: true,
