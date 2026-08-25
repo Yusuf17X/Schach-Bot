@@ -185,12 +185,13 @@ const browseClassesWizard = new Scenes.WizardScene(
     }
 
     // Handle Homework/Schedule buttons
-    if (text === "📝 الواجبات" && stage.homeworkText) {
-      await ctx.reply(`📝 الواجبات:\n\n${stage.homeworkText}`);
+    const wstage = ctx.wizard.state.stage;
+    if (text === "📝 الواجبات" && wstage && wstage.homeworkText) {
+      await ctx.reply(`📝 الواجبات:\n\n${wstage.homeworkText}`);
       return;
     }
-    if (text === "📅 الجدول" && stage.scheduleImageId) {
-      await ctx.telegram.sendPhoto(ctx.chat.id, stage.scheduleImageId);
+    if (text === "📅 الجدول" && wstage && wstage.scheduleImageId) {
+      await ctx.telegram.sendPhoto(ctx.chat.id, wstage.scheduleImageId);
       return;
     }
 
@@ -208,28 +209,30 @@ const browseClassesWizard = new Scenes.WizardScene(
     if (!selectedLecture) return ctx.reply("⚠️ اختر محاضرة من القائمة.");
 
     // Send the lecture file
-    const statusMsg = await ctx.reply(`⏳ إرسال ${selectedLecture.title}...`);
-
     try {
+      if (!selectedLecture.fileId) throw new Error("No file ID for this lecture");
+
+      const statusMsg = await ctx.reply(`⏳ إرسال ${selectedLecture.title}...`);
+
       await timeIt(
         `TG: Send file ${selectedLecture.title}`,
         ctx.telegram.sendDocument(ctx.chat.id, selectedLecture.fileId, {
           caption: selectedLecture.title,
         }),
       );
+
+      try {
+        await ctx.telegram.deleteMessage(ctx.chat.id, statusMsg.message_id);
+      } catch {
+        // Ignore failure to delete status message
+      }
     } catch (err) {
-      console.error(err);
+      console.error("Error sending lecture:", err);
       await ctx.reply("❌ خطأ, تعذر ارسال الملف.");
+    } finally {
+      ctx.scene.leave();
+      return;
     }
-
-    try {
-      await ctx.telegram.deleteMessage(ctx.chat.id, statusMsg.message_id);
-    } catch {
-      // Ignore failure to delete status message
-    }
-
-    // Leave the scene after sending the lecture
-    ctx.scene.leave();
   },
 async (ctx) => {
     // Handle callback queries for lecture reordering
