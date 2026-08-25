@@ -135,40 +135,48 @@ ctx.wizard.state.theoryLectures = theoryLectures;
     // Check if user is admin or owner to show reorder buttons
     const isAdminOrOwner = ctx.state.dbUser?.role === "admin" || ctx.state.dbUser?.role === "owner";
 
-    // Build lecture buttons with reorder controls for admins/owners
+    // Build lecture buttons: each row is an array of button objects only
+    // For inline keyboard, we cannot mix strings and objects in the same row
+    // So each lecture title becomes a callback button, with reorder buttons added
     const lectureButtons = theoryLectures.map((l, idx) => {
-      const base = [l.title];
+      // Each lecture gets its own row with title button + reorder buttons
+      const row = [];
+
+      // Add title as a button
+      row.push(Markup.button.callback(l.title, `lecture_select_${idx}`));
+
+      // Add reorder buttons for admin/owner
       if (isAdminOrOwner) {
-        base.push(
-          Markup.button.callback(`▲${idx}`, `lecture_up_${idx}`),
-          Markup.button.callback(`▼${idx}`, `lecture_down_${idx}`)
-        );
+        row.push(Markup.button.callback("▲", `lecture_up_${idx}`));
+        row.push(Markup.button.callback("▼", `lecture_down_${idx}`));
       }
-      return base;
+
+      return row;
     });
 
     if (labLectures.length > 0) {
-      // Add Lab Lectures header with reorder buttons for admin/owner
-      const labHeader = ["🔬 Lab Lectures"];
+      // Add Lab Lectures header row with title button + reorder buttons
+      const labHeader = [];
+      labHeader.push(Markup.button.callback("🔬 Lab Lectures", `lab_header_select`));
       if (isAdminOrOwner) {
-        labHeader.push(
-          Markup.button.callback("▲", `lab_up`),
-          Markup.button.callback("▼", `lab_down`)
-        );
+        labHeader.push(Markup.button.callback("▲", `lab_up`));
+        labHeader.push(Markup.button.callback("▼", `lab_down`));
       }
       lectureButtons.unshift(labHeader);
     }
 
-    lectureButtons.push(["🔙 العودة الى materials", "🔝 القائمة الرئيسية"]);
+    // Add main menu row with buttons only (convert strings to callback buttons)
+    const menuRow = ["🔙 العودة الى materials", "🔝 القائمة الرئيسية"].map(
+      (txt) => Markup.button.callback(txt, txt === "🔝 القائمة principale" ? "main_menu" : "back_to_materials")
+    );
+    lectureButtons.push(menuRow);
 
-    // Use inline keyboard for admin/owner to enable reorder buttons, otherwise reply keyboard
-    const keyboard = isAdminOrOwner
-      ? Markup.inlineKeyboard(lectureButtons)
-      : Markup.keyboard(lectureButtons);
+    // Use inline keyboard (all rows now contain only button objects)
+    const keyboard = Markup.inlineKeyboard(lectureButtons).resize();
 
     await ctx.reply(
       `📖 ${selectedClass.name}\n\nاختر محاضرة:`,
-      keyboard.resize(),
+      keyboard,
     );
     return ctx.wizard.next();
   },
