@@ -184,6 +184,11 @@ const browseClassesWizard = new Scenes.WizardScene(
       return ctx.scene.leave();
     }
 
+    // Handle back to classes list
+    if (text === "🔙 العودة الى المواد") {
+      return ctx.scene.enter("BROWSE_CLASSES_SCENE");
+    }
+
     // Handle Homework/Schedule buttons
     const wstage = ctx.wizard.state.stage;
     if (text === "📝 الواجبات" && wstage && wstage.homeworkText) {
