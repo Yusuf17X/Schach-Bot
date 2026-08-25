@@ -219,19 +219,13 @@ const browseClassesWizard = new Scenes.WizardScene(
       if (isUp && idx > 0) {
         // Swap with previous
         const prev = theoryLectures[idx - 1];
-        const temp = lecture.position;
-        lecture.position = prev.position;
-        prev.position = temp;
-        await lecture.save();
-        await prev.save();
+        await Lecture.updateOne({ _id: lecture._id }, { position: prev.position });
+        await Lecture.updateOne({ _id: prev._id }, { position: lecture.position });
       } else if (!isUp && idx < theoryLectures.length - 1) {
         // Swap with next
         const next = theoryLectures[idx + 1];
-        const temp = lecture.position;
-        lecture.position = next.position;
-        next.position = temp;
-        await lecture.save();
-        await next.save();
+        await Lecture.updateOne({ _id: lecture._id }, { position: next.position });
+        await Lecture.updateOne({ _id: next._id }, { position: lecture.position });
       } else {
         return ctx.reply("⚠️ لا يمكن التحرك في هذا الاتجاه.");
       }
