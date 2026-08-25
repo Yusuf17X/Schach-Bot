@@ -135,36 +135,33 @@ const browseClassesWizard = new Scenes.WizardScene(
     // Check if user is admin or owner to show reorder buttons
     const isAdminOrOwner = ctx.state.dbUser?.role === "admin" || ctx.state.dbUser?.role === "owner";
 
-    // Build lecture buttons as reply keyboard rows
-    // Each lecture gets its own row
-    const lectureButtons = theoryLectures.map((l, idx) => {
-      const row = [];
-
-      if (isAdminOrOwner) {
-        // Three buttons: up arrow with name, lecture name, down arrow with name
-        row.push(`▲ ${l.title}`);
-        row.push(l.title);
-        row.push(`▼ ${l.title}`);
-      } else {
-        // One button: lecture name (sends text to bot)
-        row.push(l.title);
+    // Build keyboard based on user role
+    let keyboard;
+    if (isAdminOrOwner) {
+      // Inline keyboard (attached to message) with reorder arrows
+      const rows = theoryLectures.map((l, idx) => {
+        return [
+          Markup.button.callback("▲", `lecture_up_${idx}`),
+          Markup.button.callback(l.title, `lecture_select_${idx}`),
+          Markup.button.callback("▼", `lecture_down_${idx}`),
+        ];
+      });
+      if (labLectures.length > 0) {
+        rows.unshift([Markup.button.callback("🔬 Lab Lectures", "lab_select")]);
       }
-
-      return row;
-    });
-
-    if (labLectures.length > 0) {
-      // Add Lab Lectures header row
-      const labHeader = ["🔬 Lab Lectures"];
-      lectureButtons.unshift(labHeader);
+      rows.push([
+        Markup.button.callback("🔙 العودة الى المواد", "back_to_classes"),
+      ]);
+      keyboard = Markup.inlineKeyboard(rows);
+    } else {
+      // Reply keyboard (below user keyboard) - text buttons
+      const rows = theoryLectures.map((l) => [l.title]);
+      if (labLectures.length > 0) {
+        rows.unshift(["🔬 Lab Lectures"]);
+      }
+      rows.push(["🔙 العودة الى المواد", "🔝 القائمة الرئيسية"]);
+      keyboard = Markup.keyboard(rows).resize();
     }
-
-    // Add main menu row
-    const menuRow = ["🔙 العودة الى المواد", "🔝 القائمة الرئيسية"];
-    lectureButtons.push(menuRow);
-
-    // Use reply keyboard (buttons appear below user keyboard)
-    const keyboard = Markup.keyboard(lectureButtons).resize();
 
     await ctx.reply(
       `📖 ${selectedClass.name}\n\nاختر محاضرة:`,
@@ -173,518 +170,115 @@ const browseClassesWizard = new Scenes.WizardScene(
     return ctx.wizard.next();
   },
   async (ctx) => {
-    // Handle text messages for lecture selection
+    // Handle reply keyboard text messages (regular users)
     const text = ctx.message?.text;
+    if (text) {
+      if (isCancel(text)) {
+        await ctx.reply("🔝 القائمة الرئيسية", mainMenuKeyboard(ctx));
+        return ctx.scene.leave();
+      }
+      if (text === "🔙 العودة الى المواد") {
+        return ctx.scene.enter("BROWSE_CLASSES_SCENE");
+      }
 
-    if (!text) return;
+      // Find and send the selected lecture
+      const lectures = ctx.wizard.state.theoryLectures;
+      const cleanTitle = text.replace(/▲\s*/g, "").replace(/▼\s*/g, "").trim();
+      const selectedLecture = lectures.find((l) => l.title === cleanTitle);
+      if (!selectedLecture) return ctx.reply("⚠️ اختر محاضرة من القائمة.");
 
-    // Handle cancel
-    if (isCancel(text)) {
-      await ctx.reply("🔝 القائمة الرئيسية", mainMenuKeyboard(ctx));
-      return ctx.scene.leave();
+      try {
+        if (!selectedLecture.fileId) throw new Error("No file ID");
+        const statusMsg = await ctx.reply(`⏳ إرسال ${selectedLecture.title}...`);
+        await ctx.telegram.sendDocument(ctx.chat.id, selectedLecture.fileId, {
+          caption: selectedLecture.title,
+        });
+        try { await ctx.telegram.deleteMessage(ctx.chat.id, statusMsg.message_id); } catch {}
+      } catch (err) {
+        console.error("Error sending lecture:", err);
+        await ctx.reply("❌ خطأ, تعذر ارسال الملف.");
+      }
+      return;
     }
 
-    // Handle back to classes list
-    if (text === "🔙 العودة الى المواد") {
+    // Handle inline keyboard callback queries (admins/owners)
+    if (!ctx.callbackQuery) return;
+    const data = ctx.callbackQuery.data;
+
+    if (typeof ctx.answerCallbackQuery === "function") {
+      await ctx.answerCallbackQuery();
+    }
+
+    // Back to classes
+    if (data === "back_to_classes") {
+      await ctx.answerCallbackQuery();
       return ctx.scene.enter("BROWSE_CLASSES_SCENE");
     }
 
-    // Handle Homework/Schedule buttons
-    const wstage = ctx.wizard.state.stage;
-    if (text === "📝 الواجبات" && wstage && wstage.homeworkText) {
-      await ctx.reply(`📝 الواجبات:\n\n${wstage.homeworkText}`);
+    // Select lecture (send file)
+    if (data.startsWith("lecture_select_")) {
+      const idx = parseInt(data.split("_")[2], 10);
+      const lectures = ctx.wizard.state.theoryLectures;
+      const lecture = lectures[idx];
+      if (!lecture) return;
+
+      try {
+        if (!lecture.fileId) throw new Error("No file ID");
+        const statusMsg = await ctx.reply(`⏳ إرسال ${lecture.title}...`);
+        await ctx.telegram.sendDocument(ctx.chat.id, lecture.fileId, {
+          caption: lecture.title,
+        });
+        try { await ctx.telegram.deleteMessage(ctx.chat.id, statusMsg.message_id); } catch {}
+      } catch (err) {
+        console.error("Error sending lecture:", err);
+        await ctx.reply("❌ خطأ, تعذر ارسال الملف.");
+      }
       return;
     }
-    if (text === "📅 الجدول" && wstage && wstage.scheduleImageId) {
-      await ctx.telegram.sendPhoto(ctx.chat.id, wstage.scheduleImageId);
-      return;
-    }
 
-    // --- Process Lecture Selection ---
-    const selectedClassId = ctx.wizard.state.classId;
-    if (!selectedClassId) return ctx.reply("⚠️ لم يتم تحديد مادة.");
+    // Reorder up/down
+    if (data.startsWith("lecture_up_") || data.startsWith("lecture_down_")) {
+      const isUp = data.startsWith("lecture_up_");
+      const idx = parseInt(data.split("_")[2], 10);
+      const lectures = ctx.wizard.state.theoryLectures;
+      const lecture = lectures[idx];
+      if (!lecture) return;
 
-    const theoryLectures = ctx.wizard.state.theoryLectures;
-
-    // Handle reorder: ▲ Lec name or ▼ Lec name
-    if (text.startsWith("▲ ") || text.startsWith("▼ ")) {
-      const isUp = text.startsWith("▲");
-      const lectureName = text.replace(/^▲\s*/, "").replace(/^▼\s*/, "").trim();
-      const idx = theoryLectures.findIndex((l) => l.title === lectureName);
-
-      if (idx === -1) return ctx.reply("⚠️ محاضرة غير موجودة.");
-
-      const lecture = theoryLectures[idx];
-
-      if (isUp && idx > 0) {
-        // Swap with previous
-        const prev = theoryLectures[idx - 1];
-        await Lecture.updateOne({ _id: lecture._id }, { position: prev.position });
-        await Lecture.updateOne({ _id: prev._id }, { position: lecture.position });
-      } else if (!isUp && idx < theoryLectures.length - 1) {
-        // Swap with next
-        const next = theoryLectures[idx + 1];
-        await Lecture.updateOne({ _id: lecture._id }, { position: next.position });
-        await Lecture.updateOne({ _id: next._id }, { position: lecture.position });
-      } else {
-        return ctx.reply("⚠️ لا يمكن التحرك في هذا الاتجاه.");
+      const swapIdx = isUp ? idx - 1 : idx + 1;
+      if (swapIdx < 0 || swapIdx >= lectures.length) {
+        return ctx.answerCallbackQuery({ text: "⚠️ لا يمكن التحرك", show_alert: true });
       }
 
-      // Re-fetch and rebuild keyboard
+      const other = lectures[swapIdx];
+      await Lecture.updateOne({ _id: lecture._id }, { position: other.position });
+      await Lecture.updateOne({ _id: other._id }, { position: lecture.position });
+
+      // Re-fetch and rebuild inline keyboard
+      const selectedClassId = ctx.wizard.state.classId;
       const refreshed = await Lecture.find({ classId: selectedClassId }).sort({ position: 1 });
       const refreshedTheory = refreshed.filter((l) => l.category !== "lab");
       ctx.wizard.state.theoryLectures = refreshedTheory;
 
-      const isAdmin = ctx.state.dbUser?.role === "admin" || ctx.state.dbUser?.role === "owner";
-      const rebuiltButtons = refreshedTheory.map((l) => {
-        if (isAdmin) return [`▲ ${l.title}`, l.title, `▼ ${l.title}`];
-        return [l.title];
+      const rows = refreshedTheory.map((l, i) => {
+        return [
+          Markup.button.callback("▲", `lecture_up_${i}`),
+          Markup.button.callback(l.title, `lecture_select_${i}`),
+          Markup.button.callback("▼", `lecture_down_${i}`),
+        ];
       });
-
-      const labLectures = ctx.wizard.state.labLectures;
-      if (labLectures && labLectures.length > 0) {
-        rebuiltButtons.unshift(["🔬 Lab Lectures"]);
-      }
-      rebuiltButtons.push(["🔙 العودة الى المواد", "🔝 القائمة الرئيسية"]);
-
-      await ctx.reply("✅ تم التحديث.", Markup.keyboard(rebuiltButtons).resize());
-      return;
-    }
-
-    // Handle lecture selection (plain title)
-    const cleanTitle = text.replace(/▲\s*/g, "").replace(/▼\s*/g, "").trim();
-    const selectedLecture = theoryLectures.find((l) => l.title === cleanTitle);
-
-    if (!selectedLecture) return ctx.reply("⚠️ اختر محاضرة من القائمة.");
-
-    // Send the lecture file
-    try {
-      if (!selectedLecture.fileId) throw new Error("No file ID for this lecture");
-
-      const statusMsg = await ctx.reply(`⏳ إرسال ${selectedLecture.title}...`);
-
-      await timeIt(
-        `TG: Send file ${selectedLecture.title}`,
-        ctx.telegram.sendDocument(ctx.chat.id, selectedLecture.fileId, {
-          caption: selectedLecture.title,
-        }),
-      );
-
-      try {
-        await ctx.telegram.deleteMessage(ctx.chat.id, statusMsg.message_id);
-      } catch {
-        // Ignore failure to delete status message
-      }
-    } catch (err) {
-      console.error("Error sending lecture:", err);
-      await ctx.reply("❌ خطأ, تعذر ارسال الملف.");
-    }
-  },
-async (ctx) => {
-    // Handle callback queries for lecture reordering
-    if (ctx.callbackQuery) {
-      const data = ctx.callbackQuery.data;
-
-      // Skip if not a lecture reorder callback
-      if (!data.startsWith("lecture_") && data !== "lab_up" && data !== "lab_down") {
-        return;
-      }
-
-      // Acknowledge the callback query immediately
-      if (typeof ctx.answerCallbackQuery === "function") {
-        await ctx.answerCallbackQuery();
-      }
-
-      const user = ctx.state.dbUser;
-      const isAdminOrOwner = user?.role === "admin" || user?.role === "owner";
-
-      if (!isAdminOrOwner) {
-        return;
-      }
-
-      if (data === "lab_up" || data === "lab_down") {
-        if (typeof ctx.answerCallbackQuery === "function") {
-          await ctx.answerCallbackQuery("ℹ️ Use individual lecture buttons to reorder");
-        }
-        return;
-      }
-
-      // Extract lecture index from callback data: lecture_up_0, lecture_down_3, etc.
-      const parts = data.split("_");
-      const action = parts[1]; // "up" or "down"
-      const index = parseInt(parts[2], 10);
-
-      if (isNaN(index)) {
-        if (typeof ctx.answerCallbackQuery === "function") {
-          await ctx.answerCallbackQuery("⚠️ Invalid lecture index");
-        }
-        return;
-      }
-
-      const lectures = ctx.wizard.state.theoryLectures;
-      if (index < 0 || index >= lectures.length) {
-        await ctx.answerCallbackQuery("⚠️ Lecture not found");
-        return;
-      }
-
-      const lecture = lectures[index];
-      if (!lecture) {
-        await ctx.answerCallbackQuery("⚠️ Lecture not found");
-        return;
-      }
-
-      const classId = ctx.wizard.state.classId;
-
-      if (action === "up") {
-        // Move lecture up - swap position with previous
-        if (lecture.position <= 0) {
-          await ctx.answerCallbackQuery("🔝 Already at top");
-          return;
-        }
-
-        const prevLecture = await Lecture.findOne({
-          classId,
-          position: lecture.position - 1,
-        });
-        if (!prevLecture) {
-          await ctx.answerCallbackQuery("⚠️ Error finding previous lecture");
-          return;
-        }
-
-        // Swap positions
-        const temp = lecture.position;
-        lecture.position = prevLecture.position;
-        prevLecture.position = temp;
-        await lecture.save();
-        await prevLecture.save();
-
-        await ctx.answerCallbackQuery("✅ Moved up");
-      } else if (action === "down") {
-        // Move lecture down - swap position with next
-        const allLectures = await Lecture.find({ classId });
-        const sortedLectures = allLectures.sort((a, b) => a.position - b.position);
-        const lastLecture = sortedLectures[sortedLectures.length - 1];
-
-        if (lastLecture && lecture.position >= lastLecture.position) {
-          await ctx.answerCallbackQuery("🔝 Already at bottom");
-          return;
-        }
-
-        const nextLecture = await Lecture.findOne({
-          classId,
-          position: lecture.position + 1,
-        });
-
-        if (!nextLecture) {
-          await ctx.answerCallbackQuery("⚠️ Error finding next lecture");
-          return;
-        }
-
-        // Swap positions
-        const temp = lecture.position;
-        lecture.position = nextLecture.position;
-        nextLecture.position = temp;
-        await lecture.save();
-        await nextLecture.save();
-
-        await ctx.answerCallbackQuery("✅ Moved down");
-      }
-
-      // Refresh the lecture display
-      const selectedClass = await Class.findOne({
-        _id: ctx.wizard.state.classId,
-      });
-
-      if (!selectedClass) {
-        return;
-      }
-
-      const refetchLectures = await timeIt(
-        "DB: Refresh Lectures",
-        Lecture.find({ classId: selectedClass._id }).sort({ position: 1 }),
-      );
-
-      const refetchTheory = refetchLectures.filter((l) => l.category !== "lab");
-      const refetchLab = refetchLectures.filter((l) => l.category === "lab");
-
-      // Rebuild buttons with new positions
-      const isAdmin = ctx.state.dbUser?.role === "admin" || ctx.state.dbUser?.role === "owner";
-      const refetchButtons = refetchTheory.map((l, idx) => {
-        const base = [l.title];
-        if (isAdmin) {
-          base.push(
-            Markup.button.callback(`▲${idx}`, `lecture_up_${idx}`),
-            Markup.button.callback(`▼${idx}`, `lecture_down_${idx}`)
-          );
-        }
-        return base;
-      });
-
-      if (refetchLab.length > 0) {
-        const labHeader = ["🔬 Lab Lectures"];
-        if (isAdmin) {
-          labHeader.push(
-            Markup.button.callback("▲", `lab_up`),
-            Markup.button.callback("▼", `lab_down`)
-          );
-        }
-        refetchButtons.unshift(labHeader);
-      }
-
-      refetchButtons.push(["🔙 regreso a materiales", "🔝 lista principal"]);
-
-      const keyboard = isAdmin
-        ? Markup.inlineKeyboard(refetchButtons)
-        : Markup.keyboard(refetchButtons);
-
-      try {
-        await ctx.editMessageText(
-          `📖 ${selectedClass.name}\n\nاختر محاضرة:`,
-          {
-            reply_markup: keyboard,
-          }
-        );
-      } catch {
-        // If edit fails, just send new message
-        await ctx.reply(
-          `📖 ${selectedClass.name}\n\nاختر محاضرة:`,
-          isAdmin ? Markup.inlineKeyboard(refetchButtons).resize() : Markup.keyboard(refetchButtons).resize(),
-        );
-      }
-      return;
-      }
-
-    // Handle callback queries for lecture reordering
-    if (ctx.callbackQuery) {
-      const data = ctx.callbackQuery.data;
-
-      // Skip if not a lecture reorder callback
-      if (!data.startsWith("lecture_") && data !== "lab_up" && data !== "lab_down") {
-        return;
-      }
-
-      // Acknowledge the callback query immediately
-      await ctx.answerCallbackQuery();
-
-      const user = ctx.state.dbUser;
-      const isAdminOrOwner = user?.role === "admin" || user?.role === "owner";
-
-      if (!isAdminOrOwner) {
-        return;
-      }
-
-      if (data === "lab_up" || data === "lab_down") {
-        await ctx.answerCallbackQuery("ℹ️ Use individual lecture buttons to reorder");
-        return;
-      }
-
-      // Extract lecture index from callback data: lecture_up_0, lecture_down_3, etc.
-      const parts = data.split("_");
-      const action = parts[1]; // "up" or "down"
-      const index = parseInt(parts[2], 10);
-
-      if (isNaN(index)) {
-        await ctx.answerCallbackQuery("⚠️ Invalid lecture index");
-        return;
-      }
-
-      const lectures = ctx.wizard.state.theoryLectures;
-      if (index < 0 || index >= lectures.length) {
-        await ctx.answerCallbackQuery("⚠️ Lecture not found");
-        return;
-      }
-
-      const lecture = lectures[index];
-      if (!lecture) {
-        await ctx.answerCallbackQuery("⚠️ Lecture not found");
-        return;
-      }
-
-      const classId = ctx.wizard.state.classId;
-
-      if (action === "up") {
-        // Move lecture up - swap position with previous
-        if (lecture.position <= 0) {
-          await ctx.answerCallbackQuery("🔝 Already at top");
-          return;
-        }
-
-        const prevLecture = await Lecture.findOne({
-          classId,
-          position: lecture.position - 1,
-        });
-        if (!prevLecture) {
-          await ctx.answerCallbackQuery("⚠️ Error finding previous lecture");
-          return;
-        }
-
-        // Swap positions
-        const temp = lecture.position;
-        lecture.position = prevLecture.position;
-        prevLecture.position = temp;
-        await lecture.save();
-        await prevLecture.save();
-
-        await ctx.answerCallbackQuery("✅ Moved up");
-      } else if (action === "down") {
-        // Move lecture down - swap position with next
-        const allLectures = await Lecture.find({ classId });
-        const sortedLectures = allLectures.sort((a, b) => a.position - b.position);
-        const lastLecture = sortedLectures[sortedLectures.length - 1];
-
-        if (lastLecture && lecture.position >= lastLecture.position) {
-          await ctx.answerCallbackQuery("🔝 Already at bottom");
-          return;
-        }
-
-        const nextLecture = await Lecture.findOne({
-          classId,
-          position: lecture.position + 1,
-        });
-        if (!nextLecture) {
-          await ctx.answerCallbackQuery("⚠️ Error finding next lecture");
-          return;
-        }
-
-        // Swap positions
-        const temp = lecture.position;
-        lecture.position = nextLecture.position;
-        nextLecture.position = temp;
-        await lecture.save();
-        await nextLecture.save();
-
-        await ctx.answerCallbackQuery("✅ Moved down");
-      }
-
-      // Refresh the lecture display
-      const selectedClass = await Class.findOne({
-        _id: ctx.wizard.state.classId,
-      });
-
-      if (!selectedClass) {
-        return;
-      }
-
-      const refetchLectures = await timeIt(
-        "DB: Refresh Lectures",
-        Lecture.find({ classId: selectedClass._id }).sort({ position: 1 }),
-      );
-
-      const refetchTheory = refetchLectures.filter((l) => l.category !== "lab");
-      const refetchLab = refetchLectures.filter((l) => l.category === "lab");
-
-      // Rebuild buttons with new positions
-      const isAdmin = ctx.state.dbUser?.role === "admin" || ctx.state.dbUser?.role === "owner";
-      const refetchButtons = refetchTheory.map((l, idx) => {
-        const base = [l.title];
-        if (isAdmin) {
-          base.push(
-            Markup.button.callback(`▲${idx}`, `lecture_up_${idx}`),
-            Markup.button.callback(`▼${idx}`, `lecture_down_${idx}`)
-          );
-        }
-        return base;
-      });
-
-      if (refetchLab.length > 0) {
-        const labHeader = ["🔬 Lab Lectures"];
-        if (isAdmin) {
-          labHeader.push(
-            Markup.button.callback("▲", `lab_up`),
-            Markup.button.callback("▼", `lab_down`)
-          );
-        }
-        refetchButtons.unshift(labHeader);
-      }
-
-      refetchButtons.push(["🔙 regreso a materiales", "🔝 lista principal"]);
-
-      const keyboard = isAdmin
-        ? Markup.inlineKeyboard(refetchButtons)
-        : Markup.keyboard(refetchButtons);
-
-      try {
-        await ctx.editMessageText(
-          `📖 ${selectedClass.name}\n\nاختر محاضرة:`,
-          {
-            reply_markup: keyboard,
-          }
-        );
-      } catch {
-        // If edit fails, just send new message
-        await ctx.reply(
-          `📖 ${selectedClass.name}\n\nاختر محاضرة:`,
-          isAdmin ? Markup.inlineKeyboard(refetchButtons).resize() : Markup.keyboard(refetchButtons).resize(),
-        );
-      }
-      return;
-    }
-
-    const text = ctx.message?.text;
-    if (isCancel(text)) {
-      await ctx.reply("🔝 القائمة الرئيسية", mainMenuKeyboard(ctx));
-      return ctx.scene.leave();
-    }
-
-    if (text === "🔙 regreso a materiales") {
-      return ctx.scene.enter("BROWSE_CLASSES_SCENE");
-    }
-
-    // Re-show the lectures keyboard when coming back from Lab folder
-    if (text === "🔙 regreso a materiales") {
-      const theoryButtons = ctx.wizard.state.theoryLectures.map((l) => [
-        l.title,
+      rows.push([
+        Markup.button.callback("🔙 العودة الى المواد", "back_to_classes"),
       ]);
-      if (ctx.wizard.state.labLectures.length > 0) {
-        theoryButtons.unshift(["🔬 Lab Lectures"]);
+
+      try {
+        await ctx.editMessageText(
+          `📖 ${(await Class.findOne({ _id: selectedClassId }))?.name || ""}\n\nاختر محاضرة:`,
+          { reply_markup: Markup.inlineKeyboard(rows) }
+        );
+      } catch {
+        await ctx.reply("✅ تم التحديث.", Markup.inlineKeyboard(rows));
       }
-      theoryButtons.push(["🔙 regreso a materiales", "🔝 lista principal"]);
-
-      await ctx.reply("📖 المحاضرات:", Markup.keyboard(theoryButtons).resize());
       return;
-    }
-
-    // Show Lab lectures folder
-    if (
-      text === "🔬 Lab Lectures" &&
-      ctx.wizard.state.labLectures?.length > 0
-    ) {
-      const labButtons = ctx.wizard.state.labLectures.map((l) => [l.title]);
-      labButtons.push(["🔙 regreso a materiales", "🔝 lista principal"]);
-
-      await ctx.reply(
-        "🔬 Lab Lectures:\n\nاختار محاضرة:",
-        Markup.keyboard(labButtons).resize(),
-      );
-      return;
-    }
-
-    // Find and send the selected lecture
-    const lecture = await Lecture.findOne({
-      classId: ctx.wizard.state.classId,
-      title: text,
-    });
-
-    if (!lecture) return ctx.reply("⚠️ اختار محاضرة من الازرار.");
-
-    const statusMsg = await ctx.reply(`⏳ إرسال ${lecture.title}...`);
-
-    try {
-      await timeIt(
-        `TG: Send file ${lecture.title}`,
-        ctx.telegram.sendDocument(ctx.chat.id, lecture.fileId, {
-          caption: lecture.title,
-        }),
-      );
-    } catch (err) {
-      console.error(err);
-      await ctx.reply("❌ خطأ, تعذر ارسال الملف.");
-    }
-
-    try {
-      await ctx.telegram.deleteMessage(ctx.chat.id, statusMsg.message_id);
-    } catch {
-      // Ignore failure to delete status message
     }
   },
 );
