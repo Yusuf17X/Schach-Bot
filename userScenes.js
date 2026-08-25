@@ -229,9 +229,6 @@ const browseClassesWizard = new Scenes.WizardScene(
     } catch (err) {
       console.error("Error sending lecture:", err);
       await ctx.reply("❌ خطأ, تعذر ارسال الملف.");
-    } finally {
-      ctx.scene.leave();
-      return;
     }
   },
 async (ctx) => {
