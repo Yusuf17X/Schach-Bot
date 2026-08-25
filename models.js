@@ -49,6 +49,7 @@ const lectureSchema = new mongoose.Schema(
       default: "theory",
       index: true,
     },
+    position: { type: Number, default: 0 },
   },
   {
     timestamps: true,

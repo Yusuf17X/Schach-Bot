@@ -444,7 +444,6 @@ const delLectureWizard = new Scenes.WizardScene(
 
     const stage = await Stage.findOne({ name: ctx.message.text });
     if (!stage) {
-      // Don't just return; tell the user they messed up so the bot doesn't freeze
       ctx.reply("⚠️ Stage not found. Please select from the keyboard.");
       return;
     }
@@ -467,6 +466,76 @@ const delLectureWizard = new Scenes.WizardScene(
 
   // STEP 3
   async (ctx) => {
+    // Handle inline keyboard callbacks for reorder/delete
+    if (ctx.callbackQuery) {
+      const data = ctx.callbackQuery.data;
+      const lectureId = data.split("_").pop(); // extract _id from data
+
+      if (data.startsWith("lecture_up")) {
+        // Move lecture up
+        const lecture = await Lecture.findById(lectureId);
+        if (!lecture) return ctx.answerCallbackQuery("⚠️ Lecture not found");
+
+        // Find the previous lecture by position
+        const prevLecture = await Lecture.findOne({
+          classId: lecture.classId,
+          position: lecture.position - 1,
+        });
+        if (!prevLecture) return ctx.answerCallbackQuery("🔝 Already at top");
+
+        // Swap positions
+        const temp = lecture.position;
+        lecture.position = prevLecture.position;
+        prevLecture.position = temp;
+        await lecture.save();
+        await prevLecture.save();
+
+        return ctx.answerCallbackQuery("✅ Moved up");
+
+      } else if (data.startsWith("lecture_down")) {
+        // Move lecture down
+        const lecture = await Lecture.findById(lectureId);
+        if (!lecture) return ctx.answerCallbackQuery("⚠️ Lecture not found");
+
+        // Find the next lecture by position
+        const nextLecture = await Lecture.findOne({
+          classId: lecture.classId,
+          position: lecture.position + 1,
+        });
+        if (!nextLecture) return ctx.answerCallbackQuery("🔝 Already at bottom");
+
+        // Swap positions
+        const temp = lecture.position;
+        lecture.position = nextLecture.position;
+        nextLecture.position = temp;
+        await lecture.save();
+        await nextLecture.save();
+
+        return ctx.answerCallbackQuery("✅ Moved down");
+
+      } else if (data.startsWith("lecture_del")) {
+        // Delete lecture
+        const lecture = await Lecture.findById(lectureId);
+        if (!lecture) return ctx.answerCallbackQuery("⚠️ Lecture not found");
+
+        try {
+          await ctx.telegram.deleteMessage(
+            process.env.CHANNEL_ID,
+            lecture.channelMsgId,
+          );
+        } catch (e) {
+          console.log(
+            `Failed to delete msg ${lecture.channelMsgId} from channel. Reason:`,
+            e.message,
+          );
+        }
+
+        await Lecture.findByIdAndDelete(lecture._id);
+        return ctx.answerCallbackQuery("✅ Lecture deleted.");
+      }
+    }
+
+    // Message-based flow (original behavior)
     if (isCancel(ctx.message?.text))
       return ctx.scene.leave(ctx.reply("Cancelled.", adminPanelKeyboard(ctx)));
 
@@ -485,7 +554,7 @@ const delLectureWizard = new Scenes.WizardScene(
 
     const lectures = await timeIt(
       "DB: Fetch Lectures",
-      Lecture.find({ classId: selectedClass._id }),
+      Lecture.find({ classId: selectedClass._id }).sort({ position: 1 }),
     );
 
     if (lectures.length === 0) {
@@ -505,6 +574,7 @@ const delLectureWizard = new Scenes.WizardScene(
 
   // STEP 4
   async (ctx) => {
+    // Only handle message-based delete flow (callback flow already handled above)
     if (isCancel(ctx.message?.text))
       return ctx.scene.leave(ctx.reply("Cancelled.", adminPanelKeyboard(ctx)));
 
