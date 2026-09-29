@@ -243,7 +243,7 @@ const browseClassesWizard = new Scenes.WizardScene(
         console.error("Error sending lecture:", err);
         await ctx.reply("❌ خطأ, تعذر ارسال الملف.");
       }
-      return ctx.scene.leave();
+      return;
     }
 
     // Handle inline keyboard callback queries (admins/owners)
