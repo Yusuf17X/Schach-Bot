@@ -21,6 +21,8 @@ const {
   editWelcomeMsgWizard,
   editHomeworkWizard,
   editScheduleWizard,
+  manageOwnerStageWizard,
+  manageStageGroupsWizard,
 } = require("./adminScenes");
 
 const {
@@ -131,6 +133,8 @@ const stage = new Scenes.Stage([
   editWelcomeMsgWizard,
   editHomeworkWizard,
   editScheduleWizard,
+  manageOwnerStageWizard,
+  manageStageGroupsWizard,
 ]);
 bot.use(stage.middleware());
 
@@ -303,6 +307,14 @@ bot.hears("❌ حذف الادوات المساعدة", (ctx) => {
 bot.hears("👑 اضافة ادمن", (ctx) => {
   if (ctx.state.dbUser?.role === "owner")
     ctx.scene.enter("PROMOTE_ADMIN_SCENE");
+});
+
+bot.hears("👤 إدارة مرحلتي", (ctx) => {
+  if (ctx.state.dbUser?.role === "owner") ctx.scene.enter("MANAGE_OWNER_STAGE_SCENE");
+});
+
+bot.hears("🔗 إدارة ربط الكروبات", (ctx) => {
+  if (ctx.state.dbUser?.role === "owner") ctx.scene.enter("MANAGE_STAGE_GROUPS_SCENE");
 });
 
 bot.hears("✏️ تعديل الرسالة الترحيبية", (ctx) => {
