@@ -1305,6 +1305,278 @@ const editScheduleWizard = new Scenes.WizardScene(
   },
 );
 
+const manageOwnerStageWizard = new Scenes.WizardScene(
+  "MANAGE_OWNER_STAGE_SCENE",
+  async (ctx) => {
+    const user = ctx.state.dbUser;
+    let currentStageText = "لا يوجد";
+
+    if (user.stageId) {
+      const stage = await Stage.findById(user.stageId);
+      if (stage) currentStageText = stage.name;
+    }
+
+    const stages = await Stage.find();
+
+    let message = `👤 **إدارة مرحلتي**\n\n`;
+    message += `📌 المرحلة الحالية: ${currentStageText}\n\n`;
+    message += `اختر إجراء:`;
+
+    const buttons = [
+      ["🔄 تغيير المرحلة", "❌ إزالة المرحلة الحالية"],
+    ];
+
+    if (!user.stageId && stages.length > 0) {
+      buttons.unshift(["➕ ربط مرحلة"]);
+    }
+
+    buttons.push(["🔝 القائمة الرئيسية"]);
+
+    ctx.reply(message, Markup.keyboard(buttons).resize());
+    return ctx.wizard.next();
+  },
+  async (ctx) => {
+    const user = ctx.state.dbUser;
+    const text = ctx.message?.text;
+
+    if (isCancel(text)) {
+      return ctx.scene.leave(ctx.reply("تم الإلغاء.", adminPanelKeyboard(ctx)));
+    }
+
+    if (text === "🔝 القائمة الرئيسية") {
+      return ctx.scene.leave(ctx.reply("🔝 القائمة الرئيسية", adminPanelKeyboard(ctx)));
+    }
+
+    if (text === "➕ ربط مرحلة" || text === "🔄 تغيير المرحلة") {
+      const stages = await Stage.find();
+      if (stages.length === 0) {
+        return ctx.reply("❌ لا توجد مراحل متاحة. أنشئ مرحلة أولاً.", adminPanelKeyboard(ctx));
+      }
+
+      ctx.reply(
+        "اختر المرحلة التي تريد ربطها:",
+        Markup.keyboard([
+          ...stages.map((s) => [s.name]),
+          ["❌ إلغاء"],
+        ]).resize(),
+      );
+      ctx.wizard.state.action = text === "➕ ربط مرحلة" ? "add" : "change";
+      return ctx.wizard.next();
+    }
+
+    if (text === "❌ إزالة المرحلة الحالية") {
+      if (!user.stageId) {
+        return ctx.reply("⚠️ لا توجد مرحلة مربوطة حالياً.", adminPanelKeyboard(ctx));
+      }
+
+      await User.findByIdAndUpdate(user._id, { stageId: null });
+      return ctx.scene.leave(
+        ctx.reply("✅ تم إزالة المرحلة الحالية.", adminPanelKeyboard(ctx)),
+      );
+    }
+
+    ctx.reply("⚠️ اختر من الأزرار المعروضة.");
+    return;
+  },
+  async (ctx) => {
+    const user = ctx.state.dbUser;
+    const text = ctx.message?.text;
+
+    if (isCancel(text)) {
+      return ctx.scene.leave(ctx.reply("تم الإلغاء.", adminPanelKeyboard(ctx)));
+    }
+
+    const stage = await Stage.findOne({ name: text });
+    if (!stage) {
+      return ctx.reply("⚠️ مرحلة غير صالحة. اختر من القائمة.");
+    }
+
+    await User.findByIdAndUpdate(user._id, { stageId: stage._id });
+
+    const actionText = ctx.wizard.state.action === "add" ? "ربط" : "تغيير";
+    return ctx.scene.leave(
+      ctx.reply(`✅ تم ${actionText} المرحلة إلى: ${stage.name}`, adminPanelKeyboard(ctx)),
+    );
+  },
+);
+
+const manageStageGroupsWizard = new Scenes.WizardScene(
+  "MANAGE_STAGE_GROUPS_SCENE",
+  async (ctx) => {
+    const stages = await Stage.find().sort({ name: 1 });
+
+    if (stages.length === 0) {
+      return ctx.scene.leave(
+        ctx.reply("❌ لا توجد مراحل مسجلة.", adminPanelKeyboard(ctx)),
+      );
+    }
+
+    let message = `🔗 **إدارة ربط الكروبات**\n\n`;
+    message += `اختر مرحلة لعرض/تعديل ربط الكروب:\n\n`;
+
+    for (const stage of stages) {
+      const groupInfo = stage.telegramGroupId
+        ? `🆔 ${stage.telegramGroupId}`
+        : "❌ غير مربوط";
+      message += `📚 **${stage.name}**: ${groupInfo}\n`;
+    }
+
+    const buttons = stages.map((s) => [s.name]);
+    buttons.push(["🔝 القائمة الرئيسية"]);
+
+    ctx.reply(message, Markup.keyboard(buttons).resize());
+    return ctx.wizard.next();
+  },
+  async (ctx) => {
+    const text = ctx.message?.text;
+
+    if (isCancel(text)) {
+      return ctx.scene.leave(ctx.reply("تم الإلغاء.", adminPanelKeyboard(ctx)));
+    }
+
+    if (text === "🔝 القائمة الرئيسية") {
+      return ctx.scene.leave(ctx.reply("🔝 القائمة الرئيسية", adminPanelKeyboard(ctx)));
+    }
+
+    const stage = await Stage.findOne({ name: text });
+    if (!stage) {
+      return ctx.reply("⚠️ مرحلة غير صالحة. اختر من القائمة.");
+    }
+
+    ctx.wizard.state.stageId = stage._id;
+
+    let message = `🔗 **إدارة كروب: ${stage.name}**\n\n`;
+    if (stage.telegramGroupId) {
+      message += `🆔 **Chat ID الحالي**: \`${stage.telegramGroupId}\`\n\n`;
+      message += `اختر إجراء:`;
+      ctx.reply(
+        message,
+        Markup.keyboard([
+          ["✏️ تغيير Chat ID", "🗑️ إلغاء الربط"],
+          ["🔝 القائمة الرئيسية"],
+        ]).resize(),
+      );
+    } else {
+      message += `❌ **غير مربوط حالياً**\n\n`;
+      message += `أدخل Chat ID للكروب لربطه:`;
+      ctx.reply(
+        message,
+        Markup.keyboard([["🔝 القائمة الرئيسية"]]).resize(),
+      );
+    }
+    return ctx.wizard.next();
+  },
+  async (ctx) => {
+    const text = ctx.message?.text;
+    const stageId = ctx.wizard.state.stageId;
+
+    if (isCancel(text)) {
+      return ctx.scene.leave(ctx.reply("تم الإلغاء.", adminPanelKeyboard(ctx)));
+    }
+
+    if (text === "🔝 القائمة الرئيسية") {
+      return ctx.scene.leave(ctx.reply("🔝 القائمة الرئيسية", adminPanelKeyboard(ctx)));
+    }
+
+    const stage = await Stage.findById(stageId);
+    if (!stage) {
+      return ctx.reply("⚠️ خطأ: مرحلة غير موجودة.", adminPanelKeyboard(ctx));
+    }
+
+    if (stage.telegramGroupId) {
+      if (text === "🗑️ إلغاء الربط") {
+        stage.telegramGroupId = null;
+        await stage.save();
+        return ctx.scene.leave(
+          ctx.reply(`✅ تم إلغاء ربط كروب المرحلة: ${stage.name}`, adminPanelKeyboard(ctx)),
+        );
+      }
+
+      if (text === "✏️ تغيير Chat ID") {
+        ctx.reply(
+          `أدخل Chat ID الجديد لكروب المرحلة: ${stage.name}\n\n` +
+            `💡 يمكن الحصول عليه بإضافة البوت للكروب وإرسال رسالة، ثم استخدام @userinfobot أو @RawDataBot`,
+          Markup.keyboard([["🔝 القائمة الرئيسية"]]).resize(),
+        );
+        ctx.wizard.state.action = "change";
+        return ctx.wizard.next();
+      }
+    } else {
+      const chatId = text.trim();
+      if (!/^-?\d+$/.test(chatId)) {
+        return ctx.reply("⚠️ Chat ID غير صالح. يجب أن يكون رقماً (مثال: -1001234567890).");
+      }
+
+      try {
+        await ctx.telegram.getChat(chatId);
+      } catch (e) {
+        return ctx.reply(
+          `❌ لا يمكن الوصول للكروب بهذا ID.\n` +
+            `تأكد من:\n` +
+            `1. البوت مضاف للكروب\n` +
+            `2. البوت مشرف (admin) في الكروب\n` +
+            `3. Chat ID صحيح (يبدأ بـ -100 للكروبات)`,
+        );
+      }
+
+      stage.telegramGroupId = chatId;
+      await stage.save();
+      return ctx.scene.leave(
+        ctx.reply(`✅ تم ربط كروب المرحلة ${stage.name} بـ Chat ID: \`${chatId}\``, adminPanelKeyboard(ctx)),
+      );
+    }
+
+    ctx.reply("⚠️ اختر من الأزرار المعروضة.");
+    return;
+  },
+  async (ctx) => {
+    const text = ctx.message?.text;
+    const stageId = ctx.wizard.state.stageId;
+
+    if (isCancel(text)) {
+      return ctx.scene.leave(ctx.reply("تم الإلغاء.", adminPanelKeyboard(ctx)));
+    }
+
+    if (text === "🔝 القائمة الرئيسية") {
+      return ctx.scene.leave(ctx.reply("🔝 القائمة الرئيسية", adminPanelKeyboard(ctx)));
+    }
+
+    if (ctx.wizard.state.action === "change") {
+      const chatId = text.trim();
+      if (!/^-?\d+$/.test(chatId)) {
+        return ctx.reply("⚠️ Chat ID غير صالح. يجب أن يكون رقماً (مثال: -1001234567890).");
+      }
+
+      try {
+        await ctx.telegram.getChat(chatId);
+      } catch (e) {
+        return ctx.reply(
+          `❌ لا يمكن الوصول للكروب بهذا ID.\n` +
+            `تأكد من:\n` +
+            `1. البوت مضاف للكروب\n` +
+            `2. البوت مشرف (admin) في الكروب\n` +
+            `3. Chat ID صحيح (يبدأ بـ -100 للكروبات)`,
+        );
+      }
+
+      const stage = await Stage.findById(stageId);
+      if (!stage) {
+        return ctx.reply("⚠️ خطأ: مرحلة غير موجودة.", adminPanelKeyboard(ctx));
+      }
+
+      stage.telegramGroupId = chatId;
+      await stage.save();
+
+      return ctx.scene.leave(
+        ctx.reply(`✅ تم تحديث Chat ID لكروب المرحلة ${stage.name} إلى: \`${chatId}\``, adminPanelKeyboard(ctx)),
+      );
+    }
+
+    ctx.reply("⚠️ اختر من الأزرار المعروضة.");
+    return;
+  },
+);
+
 module.exports = {
   addStageWizard,
   addClassWizard,
@@ -1322,4 +1594,6 @@ module.exports = {
   editWelcomeMsgWizard,
   editHomeworkWizard,
   editScheduleWizard,
+  manageOwnerStageWizard,
+  manageStageGroupsWizard,
 };
