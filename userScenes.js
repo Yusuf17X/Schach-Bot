@@ -138,8 +138,11 @@ const browseClassesWizard = new Scenes.WizardScene(
     // Store for keyboard rebuilding
     ctx.wizard.state.isAdminOrOwner = isAdminOrOwner;
 
-    function buildAdminKeyboard(lectures) {
+    function buildAdminKeyboard(lectures, labLectures) {
       const rows = [];
+      if (labLectures && labLectures.length > 0) {
+        rows.push([Markup.button.callback("🔬 Lab Lectures", "show_lab_lectures")]);
+      }
       lectures.forEach((l, idx) => {
         rows.push([
           Markup.button.callback("▲", `lecture_up_${idx}`),
@@ -172,7 +175,7 @@ const browseClassesWizard = new Scenes.WizardScene(
     // Build keyboard based on user role
     let keyboard;
     if (isAdminOrOwner) {
-      keyboard = buildAdminKeyboard(theoryLectures);
+      keyboard = buildAdminKeyboard(theoryLectures, labLectures);
     } else {
       keyboard = buildUserKeyboard(theoryLectures, labLectures);
     }
@@ -190,9 +193,11 @@ const browseClassesWizard = new Scenes.WizardScene(
       // Handle rename input for admins
       if (ctx.wizard.state.renamingIdx !== undefined) {
         const idx = ctx.wizard.state.renamingIdx;
+        const isLab = ctx.wizard.state.renamingLab;
         delete ctx.wizard.state.renamingIdx;
+        delete ctx.wizard.state.renamingLab;
 
-        const lectures = ctx.wizard.state.theoryLectures;
+        const lectures = isLab ? ctx.wizard.state.labLectures : ctx.wizard.state.theoryLectures;
         const lecture = lectures[idx];
         if (!lecture) return ctx.reply("⚠️ محاضرة غير موجودة.");
 
@@ -205,13 +210,38 @@ const browseClassesWizard = new Scenes.WizardScene(
 
         const selectedClassId = ctx.wizard.state.classId;
         const buildAdminKeyboard = ctx.wizard.state.buildAdminKeyboard;
+        const labLectures = ctx.wizard.state.labLectures;
 
         try {
           const className = (await Class.findOne({ _id: selectedClassId }))?.name || "";
-          await ctx.reply(
-            `✅ تم تغيير اسم "${oldName}" إلى "${newName}"`,
-            buildAdminKeyboard(lectures)
-          );
+          if (isLab) {
+            function buildLabAdminKeyboard(lectures) {
+              const rows = [];
+              rows.push([Markup.button.callback("🔙 Theory Lectures", "show_theory_lectures")]);
+              lectures.forEach((l, idx) => {
+                rows.push([
+                  Markup.button.callback("▲", `lab_lecture_up_${idx}`),
+                  Markup.button.callback(l.title, `lab_lecture_select_${idx}`),
+                  Markup.button.callback("▼", `lab_lecture_down_${idx}`),
+                ]);
+                rows.push([
+                  Markup.button.callback("✏️", `lab_lecture_rename_${idx}`),
+                  Markup.button.callback("🗑️", `lab_lecture_delete_${idx}`),
+                ]);
+              });
+              rows.push([Markup.button.callback("🔙 العودة الى المواد", "back_to_classes")]);
+              return Markup.inlineKeyboard(rows);
+            }
+            await ctx.reply(
+              `✅ تم تغيير اسم "${oldName}" إلى "${newName}"`,
+              buildLabAdminKeyboard(lectures)
+            );
+          } else {
+            await ctx.reply(
+              `✅ تم تغيير اسم "${oldName}" إلى "${newName}"`,
+              buildAdminKeyboard(lectures, labLectures)
+            );
+          }
         } catch (e) {
           console.error("Failed to send updated keyboard:", e.message);
         }
@@ -254,6 +284,73 @@ const browseClassesWizard = new Scenes.WizardScene(
     if (data === "back_to_classes") {
       if (typeof ctx.answerCbQuery === "function") await ctx.answerCbQuery();
       return ctx.scene.enter("BROWSE_CLASSES_SCENE");
+    }
+
+    // Show lab lectures for admin/owner
+    if (data === "show_lab_lectures") {
+      if (typeof ctx.answerCbQuery === "function") await ctx.answerCbQuery();
+      const labLectures = ctx.wizard.state.labLectures;
+      const selectedClassId = ctx.wizard.state.classId;
+      const className = (await Class.findOne({ _id: selectedClassId }))?.name || "";
+
+      function buildLabAdminKeyboard(lectures) {
+        const rows = [];
+        rows.push([Markup.button.callback("🔙 Theory Lectures", "show_theory_lectures")]);
+        lectures.forEach((l, idx) => {
+          rows.push([
+            Markup.button.callback("▲", `lab_lecture_up_${idx}`),
+            Markup.button.callback(l.title, `lab_lecture_select_${idx}`),
+            Markup.button.callback("▼", `lab_lecture_down_${idx}`),
+          ]);
+          rows.push([
+            Markup.button.callback("✏️", `lab_lecture_rename_${idx}`),
+            Markup.button.callback("🗑️", `lab_lecture_delete_${idx}`),
+          ]);
+        });
+        rows.push([Markup.button.callback("🔙 العودة الى المواد", "back_to_classes")]);
+        return Markup.inlineKeyboard(rows);
+      }
+
+      await ctx.editMessageText(
+        `🔬 ${className} - Lab Lectures\n\nاختر محاضرة:`,
+        buildLabAdminKeyboard(labLectures)
+      );
+      return;
+    }
+
+    // Show theory lectures (back from lab view)
+    if (data === "show_theory_lectures") {
+      if (typeof ctx.answerCbQuery === "function") await ctx.answerCbQuery();
+      const theoryLectures = ctx.wizard.state.theoryLectures;
+      const labLectures = ctx.wizard.state.labLectures;
+      const selectedClassId = ctx.wizard.state.classId;
+      const className = (await Class.findOne({ _id: selectedClassId }))?.name || "";
+
+      function buildAdminKeyboard(lectures, labLectures) {
+        const rows = [];
+        if (labLectures && labLectures.length > 0) {
+          rows.push([Markup.button.callback("🔬 Lab Lectures", "show_lab_lectures")]);
+        }
+        lectures.forEach((l, idx) => {
+          rows.push([
+            Markup.button.callback("▲", `lecture_up_${idx}`),
+            Markup.button.callback(l.title, `lecture_select_${idx}`),
+            Markup.button.callback("▼", `lecture_down_${idx}`),
+          ]);
+          rows.push([
+            Markup.button.callback("✏️", `lecture_rename_${idx}`),
+            Markup.button.callback("🗑️", `lecture_delete_${idx}`),
+          ]);
+        });
+        rows.push([Markup.button.callback("🔙 العودة الى المواد", "back_to_classes")]);
+        return Markup.inlineKeyboard(rows);
+      }
+
+      await ctx.editMessageText(
+        `📖 ${className}\n\nاختر محاضرة:`,
+        buildAdminKeyboard(theoryLectures, labLectures)
+      );
+      return;
     }
 
     // Select lecture (send file)
@@ -354,12 +451,160 @@ const browseClassesWizard = new Scenes.WizardScene(
 
       const selectedClassId = ctx.wizard.state.classId;
       const buildAdminKeyboard = ctx.wizard.state.buildAdminKeyboard;
+      const labLectures = ctx.wizard.state.labLectures;
 
       try {
         const className = (await Class.findOne({ _id: selectedClassId }))?.name || "";
         await ctx.editMessageText(
           `📖 ${className}\n\nاختر محاضرة:`,
-          buildAdminKeyboard(lectures)
+          buildAdminKeyboard(lectures, labLectures)
+        );
+      } catch (e) {
+        console.error("editMessageText failed:", e.message);
+      }
+      return;
+    }
+
+    // Lab lecture handlers
+    // Select lab lecture
+    if (data.startsWith("lab_lecture_select_")) {
+      const idx = parseInt(data.split("_")[3], 10);
+      const labLectures = ctx.wizard.state.labLectures;
+      const lecture = labLectures[idx];
+      if (!lecture) { if (typeof ctx.answerCbQuery === "function") await ctx.answerCbQuery(); return; }
+
+      if (typeof ctx.answerCbQuery === "function") await ctx.answerCbQuery();
+
+      try {
+        if (!lecture.fileId) throw new Error("No file ID");
+        const statusMsg = await ctx.reply(`⏳ إرسال ${lecture.title}...`);
+        await ctx.telegram.sendDocument(ctx.chat.id, lecture.fileId, {
+          caption: lecture.title,
+        });
+        try { await ctx.telegram.deleteMessage(ctx.chat.id, statusMsg.message_id); } catch {}
+      } catch (err) {
+        console.error("Error sending lab lecture:", err);
+        await ctx.reply("❌ خطأ, تعذر ارسال الملف.");
+      }
+      return;
+    }
+
+    // Lab lecture reorder up/down
+    if (data.startsWith("lab_lecture_up_") || data.startsWith("lab_lecture_down_")) {
+      if (typeof ctx.answerCbQuery === "function") await ctx.answerCbQuery();
+      const isUp = data.startsWith("lab_lecture_up_");
+      const idx = parseInt(data.split("_")[3], 10);
+      const labLectures = ctx.wizard.state.labLectures;
+      const lecture = labLectures[idx];
+      if (!lecture) return;
+
+      const swapIdx = isUp ? idx - 1 : idx + 1;
+      if (swapIdx < 0 || swapIdx >= labLectures.length) {
+        if (typeof ctx.answerCbQuery === "function") await ctx.answerCbQuery({ text: "⚠️ لا يمكن التحرك", show_alert: true });
+        return;
+      }
+
+      // Swap in local array
+      const temp = labLectures[idx];
+      labLectures[idx] = labLectures[swapIdx];
+      labLectures[swapIdx] = temp;
+
+      // Reassign ALL positions based on new array order and update DB
+      for (let i = 0; i < labLectures.length; i++) {
+        await Lecture.updateOne({ _id: labLectures[i]._id }, { position: i });
+        labLectures[i].position = i;
+      }
+
+      const selectedClassId = ctx.wizard.state.classId;
+      const className = (await Class.findOne({ _id: selectedClassId }))?.name || "";
+
+      function buildLabAdminKeyboard(lectures) {
+        const rows = [];
+        rows.push([Markup.button.callback("🔙 Theory Lectures", "show_theory_lectures")]);
+        lectures.forEach((l, idx) => {
+          rows.push([
+            Markup.button.callback("▲", `lab_lecture_up_${idx}`),
+            Markup.button.callback(l.title, `lab_lecture_select_${idx}`),
+            Markup.button.callback("▼", `lab_lecture_down_${idx}`),
+          ]);
+          rows.push([
+            Markup.button.callback("✏️", `lab_lecture_rename_${idx}`),
+            Markup.button.callback("🗑️", `lab_lecture_delete_${idx}`),
+          ]);
+        });
+        rows.push([Markup.button.callback("🔙 العودة الى المواد", "back_to_classes")]);
+        return Markup.inlineKeyboard(rows);
+      }
+
+      try {
+        await ctx.editMessageText(
+          `🔬 ${className} - Lab Lectures\n\nاختر محاضرة:`,
+          buildLabAdminKeyboard(labLectures)
+        );
+      } catch (e) {
+        console.error("editMessageText failed:", e.message);
+      }
+      return;
+    }
+
+    // Lab lecture rename - prompt
+    if (data.startsWith("lab_lecture_rename_")) {
+      const idx = parseInt(data.split("_")[3], 10);
+      const labLectures = ctx.wizard.state.labLectures;
+      const lecture = labLectures[idx];
+      if (!lecture) return;
+
+      if (typeof ctx.answerCbQuery === "function") await ctx.answerCbQuery();
+
+      ctx.wizard.state.renamingIdx = idx;
+      ctx.wizard.state.renamingLab = true;
+      await ctx.reply(`✏️ اكتب الاسم الجديد لمحاضرة "${lecture.title}":`);
+      return;
+    }
+
+    // Lab lecture delete
+    if (data.startsWith("lab_lecture_delete_")) {
+      const idx = parseInt(data.split("_")[3], 10);
+      const labLectures = ctx.wizard.state.labLectures;
+      const lecture = labLectures[idx];
+      if (!lecture) return;
+
+      if (typeof ctx.answerCbQuery === "function") await ctx.answerCbQuery();
+
+      await Lecture.deleteOne({ _id: lecture._id });
+      labLectures.splice(idx, 1);
+
+      // Reassign ALL positions
+      for (let i = 0; i < labLectures.length; i++) {
+        await Lecture.updateOne({ _id: labLectures[i]._id }, { position: i });
+        labLectures[i].position = i;
+      }
+
+      const selectedClassId = ctx.wizard.state.classId;
+      const className = (await Class.findOne({ _id: selectedClassId }))?.name || "";
+
+      function buildLabAdminKeyboard(lectures) {
+        const rows = [];
+        rows.push([Markup.button.callback("🔙 Theory Lectures", "show_theory_lectures")]);
+        lectures.forEach((l, idx) => {
+          rows.push([
+            Markup.button.callback("▲", `lab_lecture_up_${idx}`),
+            Markup.button.callback(l.title, `lab_lecture_select_${idx}`),
+            Markup.button.callback("▼", `lab_lecture_down_${idx}`),
+          ]);
+          rows.push([
+            Markup.button.callback("✏️", `lab_lecture_rename_${idx}`),
+            Markup.button.callback("🗑️", `lab_lecture_delete_${idx}`),
+          ]);
+        });
+        rows.push([Markup.button.callback("🔙 العودة الى المواد", "back_to_classes")]);
+        return Markup.inlineKeyboard(rows);
+      }
+
+      try {
+        await ctx.editMessageText(
+          `🔬 ${className} - Lab Lectures\n\nاختر محاضرة:`,
+          buildLabAdminKeyboard(labLectures)
         );
       } catch (e) {
         console.error("editMessageText failed:", e.message);
