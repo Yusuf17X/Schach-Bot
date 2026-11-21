@@ -1,6 +1,7 @@
 # Schach Bot (بوت سچاچ)
 
 Telegram bot for managing university educational content using **Node.js**, **Telegraf**, and **MongoDB**.
+
 Deployed in production and actively used by 100+ university students.
 
 Bot username on telegram: @BITSchachBot
