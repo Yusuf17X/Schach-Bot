@@ -22,7 +22,8 @@ Create `.env`:
 BOT_TOKEN=your_telegram_bot_token
 ADMIN_ID=your_telegram_user_id
 CHANNEL_ID=@your_private_channel
-DB=mongodb+srv://user:<DB_PASSWORD>@cluster.mongodb.net/dbname DB_PASSWORD=your_mongo_password
+DB=mongodb+srv://user:<DB_PASSWORD>@cluster.mongodb.net/dbname
+DB_PASSWORD=your_mongo_password
 ```
 
 Run:
