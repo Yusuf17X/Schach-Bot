@@ -11,7 +11,7 @@ Deployed in production and actively used by 100+ university students.
 ## ⚡ Quick Start
 
 ```bash
-git clone https://github.com/yourusername/bit-schach-bot.git
+git clone https://github.com/Yusuf17X/Schach-Bot.git
 cd bit-schach-bot
 npm install
 ```
