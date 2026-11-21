@@ -3,6 +3,7 @@
 Telegram bot for managing university educational content using **Node.js**, **Telegraf**, and **MongoDB**.
 
 Bot username on telegram: @BITSchachBot
+
 Deployed in production and actively used by 100+ university students.
 
 ---
